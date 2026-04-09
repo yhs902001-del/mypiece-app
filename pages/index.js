@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
+import { auth, db } from "@/lib/firebase";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+} from "firebase/auth";
+import { ref, set, get, push, onValue, serverTimestamp } from "firebase/database";
 
 // ─── i18n ───
 const LANGS = [
@@ -582,6 +590,8 @@ const USERS = [
 ];
 
 const SC = { SPLASH: 0, LANG: 1, AGE: 2, BLOCK: 3, LOGIN: 4, SIGNUP: 5, HOME: 6, CHAT: 7, PROFILE: 8, LOUNGE: 9, REPORT: 10, SETTINGS: 11, UPROF: 12 };
+const DB_USERS = "users";
+const DB_CHATS = "chats";
 
 export default function App() {
   const [lang, setLang] = useState("ko");
@@ -610,11 +620,45 @@ export default function App() {
   const [gFilter, setGFilter] = useState("all");
   const [showGF, setShowGF] = useState(false);
   const [photoT, setPhotoT] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState("login"); // "login" | "register"
+  const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
   const chatEnd = useRef(null);
 
   const t = (k) => tx(lang, k);
   const P = () => (L[lang] && L[lang].pcs) ? L[lang].pcs : L.en.pcs;
   const mc = (p) => p >= 90 ? "#4ade80" : p >= 75 ? "#fbbf24" : "#888";
+
+  // Firebase Auth 상태 감지
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        setAuthUser(fbUser);
+        // DB에서 유저 프로필 불러오기
+        const snap = await get(ref(db, `${DB_USERS}/${fbUser.uid}`));
+        if (snap.exists()) {
+          const data = snap.val();
+          setNick(data.nickname || "");
+          setMyP(data.myPieces || []);
+          setIntP(data.intPieces || []);
+          setUser(data);
+          const m = USERS.filter(u => (data.intPieces || []).length > 0
+            ? u.mp.some(x => (data.intPieces || []).includes(x)) || u.ip.some(x => (data.myPieces || []).includes(x))
+            : true
+          );
+          setMatches(m.length > 0 ? m : USERS.slice(0, 5));
+          setScr(SC.HOME);
+        }
+        // 프로필 없으면 회원가입 플로우 계속
+      } else {
+        setAuthUser(null);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (scr === SC.SPLASH) {
@@ -634,6 +678,21 @@ export default function App() {
     }
   }, [toast]);
 
+  // Firebase 채팅 리스너
+  useEffect(() => {
+    if (!chatU || !authUser) return;
+    const chatId = [authUser.uid, "demo_" + chatU.id].sort().join("_");
+    const msgsRef = ref(db, `${DB_CHATS}/${chatId}`);
+    const unsub = onValue(msgsRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.val();
+        const arr = Object.values(data).sort((a, b) => a.ts - b.ts);
+        setMsgs(arr.map(m => ({ id: m.ts, from: m.uid === authUser.uid ? "me" : "them", text: m.text, time: m.time })));
+      }
+    });
+    return () => unsub();
+  }, [chatU, authUser]);
+
   const go = (s) => { setHist(h => [...h, scr]); setScr(s); };
   const back = () => { const h = [...hist]; const l = h.pop() || SC.HOME; setHist(h); setScr(l); };
   const tog = (list, set, max, p) => set(prev => prev.includes(p) ? prev.filter(x => x !== p) : prev.length < max ? [...prev, p] : prev);
@@ -648,12 +707,64 @@ export default function App() {
     }, 2500);
   };
 
-  const complete = () => {
-    setUser({ nickname: nick, myPieces: myP, intPieces: intP, verified: vDone, vPart, badge: false });
+  // 프로필 완성 → Firebase 저장
+  const complete = async () => {
+    const profile = { nickname: nick, myPieces: myP, intPieces: intP, verified: vDone, vPart, badge: false, createdAt: Date.now() };
+    setUser(profile);
+    if (authUser) {
+      await set(ref(db, `${DB_USERS}/${authUser.uid}`), profile);
+    }
     const m = USERS.filter(u => !blocked.includes(u.id) && (u.mp.some(x => intP.includes(x)) || u.ip.some(x => myP.includes(x))));
     setMatches(m.length > 0 ? m : USERS.slice(0, 5));
     setScr(SC.HOME);
     st("Welcome to MyPiece! 🎉");
+  };
+
+  // Firebase 이메일 회원가입
+  const handleRegister = async () => {
+    if (!email || !password) return;
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged가 감지해서 처리
+    } catch (e) {
+      const msgs = {
+        "auth/email-already-in-use": "이미 사용 중인 이메일이에요",
+        "auth/weak-password": "비밀번호는 6자 이상이어야 해요",
+        "auth/invalid-email": "이메일 형식이 올바르지 않아요",
+      };
+      setAuthError(msgs[e.code] || e.message);
+    }
+    setAuthLoading(false);
+  };
+
+  // Firebase 이메일 로그인
+  const handleLogin = async () => {
+    if (!email || !password) return;
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      const msgs = {
+        "auth/user-not-found": "가입된 계정이 없어요",
+        "auth/wrong-password": "비밀번호가 틀렸어요",
+        "auth/invalid-credential": "이메일 또는 비밀번호가 틀렸어요",
+        "auth/invalid-email": "이메일 형식이 올바르지 않아요",
+      };
+      setAuthError(msgs[e.code] || e.message);
+    }
+    setAuthLoading(false);
+  };
+
+  // Firebase 로그아웃
+  const handleLogout = async () => {
+    await signOut(auth);
+    setUser(null);
+    setAuthUser(null);
+    setNick(""); setMyP([]); setIntP([]);
+    setScr(SC.LANG);
   };
 
   const openChat = (u) => {
@@ -662,12 +773,20 @@ export default function App() {
     go(SC.CHAT);
   };
 
-  const sendMsg = () => {
+  // Firebase 채팅 메시지 전송
+  const sendMsg = async () => {
     if (!inp.trim()) return;
     const now = new Date();
     const h = now.getHours();
     const ts = (h % 12 || 12) + ":" + String(now.getMinutes()).padStart(2, "0") + (h >= 12 ? " PM" : " AM");
-    setMsgs(p => [...p, { id: Date.now(), from: "me", text: inp, time: ts }]);
+    const msgData = { text: inp, uid: authUser?.uid || "guest", time: ts, ts: Date.now() };
+
+    if (authUser && chatU) {
+      const chatId = [authUser.uid, "demo_" + chatU.id].sort().join("_");
+      await push(ref(db, `${DB_CHATS}/${chatId}`), msgData);
+    } else {
+      setMsgs(p => [...p, { id: Date.now(), from: "me", text: inp, time: ts }]);
+    }
     setInp("");
     setTyping(true);
     setTimeout(() => {
@@ -826,7 +945,7 @@ export default function App() {
   if (scr === SC.LOGIN) return (
     <div style={{ ...base, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 32px" }}>
       <Head><title>MyPiece</title></Head>
-      <div style={{ textAlign: "center", marginBottom: 64 }}>
+      <div style={{ textAlign: "center", marginBottom: 40 }}>
         <div style={{
           fontSize: 48, fontWeight: 900,
           background: `linear-gradient(135deg,${A},${AS})`,
@@ -834,7 +953,33 @@ export default function App() {
         }}>MyPiece</div>
         <div style={{ color: "#444", fontSize: 12, marginTop: 8, letterSpacing: 4 }}>{t("slogan")}</div>
       </div>
-      <button style={btnStyle(true)} onClick={() => { setStep(0); setScr(SC.SIGNUP); }}>{t("start")}</button>
+
+      {/* 로그인 / 회원가입 탭 */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 24, borderRadius: 12, overflow: "hidden", border: `1px solid ${BD}` }}>
+        {["login", "register"].map(m => (
+          <button key={m} onClick={() => { setAuthMode(m); setAuthError(""); }} style={{
+            flex: 1, padding: "12px 0", border: "none",
+            background: authMode === m ? A : SL,
+            color: authMode === m ? "#fff" : "#666",
+            fontSize: 14, fontWeight: 700, cursor: "pointer"
+          }}>{m === "login" ? "로그인" : "회원가입"}</button>
+        ))}
+      </div>
+
+      <input style={{ ...iB, marginBottom: 12 }} type="email" placeholder="이메일" value={email} onChange={e => setEmail(e.target.value)} />
+      <input style={{ ...iB, marginBottom: 8 }} type="password" placeholder="비밀번호 (6자 이상)" value={password} onChange={e => setPassword(e.target.value)}
+        onKeyDown={e => e.key === "Enter" && (authMode === "login" ? handleLogin() : handleRegister())} />
+
+      {authError && <div style={{ color: "#ef4444", fontSize: 12, marginBottom: 10, textAlign: "center" }}>{authError}</div>}
+
+      <button style={btnStyle(!authLoading && email && password)}
+        onClick={() => authMode === "login" ? handleLogin() : handleRegister()}>
+        {authLoading ? "처리 중..." : authMode === "login" ? "로그인" : "회원가입"}
+      </button>
+
+      <div style={{ textAlign: "center", marginTop: 20, color: "#555", fontSize: 12 }}>
+        이메일/비밀번호로 가입하면 어느 기기에서든 로그인 가능해요
+      </div>
     </div>
   );
 
@@ -1406,7 +1551,7 @@ export default function App() {
         {[
           { l: t("settings"), a: () => go(SC.SETTINGS) },
           { l: `${t("block")} (${blocked.length})`, a: null },
-          { l: t("logout"), a: () => { setUser(null); setScr(SC.LANG); } },
+          { l: t("logout"), a: handleLogout },
         ].map((item, i, arr) => (
           <div key={i} onClick={item.a} style={{
             padding: "15px 20px", display: "flex", justifyContent: "space-between",
