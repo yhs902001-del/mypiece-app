@@ -1,13 +1,13 @@
 .page {
-  --background: #fafafa;
+  --background: #ffffff;
   --foreground: #fff;
 
-  --text-primary: #000;
+  --text-primary: #1a1a1a;
   --text-secondary: #666;
 
-  --button-primary-hover: #383838;
-  --button-secondary-hover: #f2f2f2;
-  --button-secondary-border: #ebebeb;
+  --button-primary-hover: #C9714D;
+  --button-secondary-hover: #fff3ee;
+  --button-secondary-border: #e8d5c8;
 
   display: flex;
   min-height: 100vh;
@@ -123,19 +123,15 @@ a.secondary {
 }
 
 @media (prefers-color-scheme: dark) {
-  .logo {
-    filter: invert();
-  }
-
   .page {
-    --background: #000;
-    --foreground: #000;
+    --background: #ffffff;
+    --foreground: #ffffff;
 
-    --text-primary: #ededed;
-    --text-secondary: #999;
+    --text-primary: #1a1a1a;
+    --text-secondary: #666;
 
-    --button-primary-hover: #ccc;
-    --button-secondary-hover: #1a1a1a;
-    --button-secondary-border: #1a1a1a;
+    --button-primary-hover: #C9714D;
+    --button-secondary-hover: #fff3ee;
+    --button-secondary-border: #e8d5c8;
   }
 }

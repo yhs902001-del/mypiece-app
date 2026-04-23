@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
+import Link from "next/link";
 import { auth, db, storage, getMessagingInstance } from "@/lib/firebase";
 import { ref as sRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getToken, onMessage } from "firebase/messaging";
@@ -580,20 +581,48 @@ const L = {
 
 const tx = (lang, k) => (L[lang] && L[lang][k]) ? L[lang][k] : (L.en[k] || k);
 
-const USERS = [
-  { id: 1, name: "하늘별", age: 24, g: "F", bio: "손에 자신있어요 ✋", mp: [0], ip: [0, 4], v: true, vp: 0, on: true, lm: "안녕하세요~", ph: true, d: 2.3, la: "3m", pct: 92, badge: true, rep: 0, region: "KR" },
-  { id: 2, name: "Luna", age: 22, g: "F", bio: "Ballet dancer 🦰", mp: [1, 3], ip: [1, 3], v: true, vp: 1, on: true, lm: "Hi :)", ph: true, d: 5.1, la: "5m", pct: 87, badge: true, rep: 0, region: "US" },
-  { id: 3, name: "夜空", age: 27, g: "M", bio: "筋トレ3年目 💪", mp: [5], ip: [5, 2], v: false, vp: null, on: false, lm: "", ph: false, d: 1.8, la: "2h", pct: 74, badge: false, rep: 0, region: "JP" },
-  { id: 4, name: "새벽이슬", age: 25, g: "F", bio: "쇄골 라인이 매력", mp: [10, 6], ip: [10, 6], v: true, vp: 10, on: true, lm: "Good vibes~", ph: true, d: 8.4, la: "1m", pct: 95, badge: true, rep: 0, region: "KR" },
-  { id: 5, name: "Cloud", age: 29, g: "M", bio: "Watch lover ⌚", mp: [0, 8], ip: [0, 8], v: true, vp: 0, on: false, lm: "Later!", ph: true, d: 12, la: "1d", pct: 68, badge: false, rep: 0, region: "US" },
-  { id: 6, name: "星の庭", age: 23, g: "F", bio: "ヨガインストラクター", mp: [6, 7], ip: [11, 2], v: true, vp: 6, on: true, lm: "", ph: true, d: 3.7, la: "5m", pct: 81, badge: true, rep: 0, region: "JP" },
-  { id: 7, name: "María", age: 26, g: "F", bio: "Dancer from Madrid 💃", mp: [3, 1], ip: [6, 10], v: true, vp: 3, on: true, lm: "", ph: true, d: 9200, la: "2m", pct: 78, badge: true, rep: 0, region: "ES" },
-  { id: 8, name: "Tom", age: 28, g: "M", bio: "Climber 🧗", mp: [2, 5], ip: [2, 7], v: true, vp: 2, on: false, lm: "Nice arms!", ph: true, d: 4100, la: "3h", pct: 70, badge: false, rep: 0, region: "DE" },
-];
+// 매칭률 = 내 관심과 상대 피스의 교집합 + 내 피스와 상대 관심의 교집합 비율
+const computeMatchPct = (otherMp = [], otherIp = [], myMp = [], myIp = []) => {
+  const s1 = otherMp.filter(x => myIp.includes(x)).length;
+  const s2 = otherIp.filter(x => myMp.includes(x)).length;
+  const base = Math.max((myMp.length || 0) + (myIp.length || 0), 1);
+  return Math.min(99, 45 + Math.round(((s1 + s2) / base) * 55));
+};
+
+// DB 프로필 → 스와이프 카드 형식으로 변환
+const profileToCard = (uid, data, myMp = [], myIp = []) => {
+  if (!data || !data.nickname) return null;
+  const mp = data.myPieces || [];
+  const ip = data.intPieces || [];
+  return {
+    id: uid,
+    uid,
+    name: data.nickname,
+    age: data.age || 0,
+    g: data.gender || "",
+    bio: data.bio || "",
+    mp,
+    ip,
+    v: !!data.verified,
+    vp: Array.isArray(data.vParts) && data.vParts.length > 0 ? data.vParts[0] : null,
+    on: false,
+    lm: "",
+    ph: !!(data.photoURLs && Object.keys(data.photoURLs).length > 0),
+    d: 0,
+    la: "",
+    pct: computeMatchPct(mp, ip, myMp, myIp),
+    badge: !!data.badge,
+    rep: 0,
+    region: data.region || "",
+    photoURLs: data.photoURLs || {},
+  };
+};
 
 const SC = { SPLASH: 0, LANG: 1, AGE: 2, BLOCK: 3, LOGIN: 4, SIGNUP: 5, HOME: 6, CHAT: 7, PROFILE: 8, LOUNGE: 9, REPORT: 10, SETTINGS: 11, UPROF: 12 };
 const DB_USERS = "users";
 const DB_CHATS = "chats";
+const DB_LIKES = "likes";
+const DB_MATCHES = "matches";
 
 export default function App() {
   const [lang, setLang] = useState("ko");
@@ -610,9 +639,12 @@ export default function App() {
   const [chatU, setChatU] = useState(null);
   const [msgs, setMsgs] = useState([]);
   const [inp, setInp] = useState("");
+  const [users, setUsers] = useState([]);
   const [matches, setMatches] = useState([]);
   const [liked, setLiked] = useState([]);
   const [blocked, setBlocked] = useState([]);
+  const [showMatch, setShowMatch] = useState(false);
+  const [matchUser, setMatchUser] = useState(null);
   const [toast, setToast] = useState("");
   const [swpI, setSwpI] = useState(0);
   const [typing, setTyping] = useState(false);
@@ -641,6 +673,8 @@ export default function App() {
   const [uploading, setUploading] = useState({});
   const chatEnd = useRef(null);
   const fileRefs = useRef({});
+  const matchesSeenRef = useRef(new Set());
+  const initialMatchesLoadedRef = useRef(false);
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 1024);
@@ -686,16 +720,15 @@ export default function App() {
         const snap = await get(ref(db, `${DB_USERS}/${fbUser.uid}`));
         if (snap.exists()) {
           const data = snap.val();
+          const myMp = data.myPieces || [];
+          const myIp = data.intPieces || [];
+          const blockedList = data.blocked || [];
           setNick(data.nickname || "");
-          setMyP(data.myPieces || []);
-          setIntP(data.intPieces || []);
-          setBlocked(data.blocked || []);
+          setMyP(myMp);
+          setIntP(myIp);
+          setBlocked(blockedList);
           setUser(data);
-          const m = USERS.filter(u => (data.intPieces || []).length > 0
-            ? u.mp.some(x => (data.intPieces || []).includes(x)) || u.ip.some(x => (data.myPieces || []).includes(x))
-            : true
-          );
-          setMatches(m.length > 0 ? m : USERS.slice(0, 5));
+          await loadUsersAndRelations(fbUser.uid, myMp, myIp, blockedList);
           setScr(SC.HOME);
         } else {
           // 프로필 없으면 → 프로필 설정 플로우로
@@ -709,9 +742,36 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  // DB에서 전체 유저 / 좋아요 / 매칭 불러오기
+  const loadUsersAndRelations = async (uid, myMp, myIp, blockedList) => {
+    try {
+      const [usersSnap, likesSnap, matchesSnap] = await Promise.all([
+        get(ref(db, DB_USERS)),
+        get(ref(db, `${DB_LIKES}/${uid}`)),
+        get(ref(db, `${DB_MATCHES}/${uid}`)),
+      ]);
+
+      const allUsers = usersSnap.exists() ? usersSnap.val() : {};
+      const likesData = likesSnap.exists() ? likesSnap.val() : {};
+      const matchesData = matchesSnap.exists() ? matchesSnap.val() : {};
+
+      const list = Object.entries(allUsers)
+        .filter(([otherUid]) => otherUid !== uid && !blockedList.includes(otherUid))
+        .map(([otherUid, data]) => profileToCard(otherUid, data, myMp, myIp))
+        .filter(u => u !== null)
+        .sort((a, b) => b.pct - a.pct);
+
+      setUsers(list);
+      setLiked(Object.keys(likesData));
+      setMatches(list.filter(u => matchesData[u.id]));
+    } catch (e) {
+      console.warn("유저 목록 로드 실패:", e.message);
+    }
+  };
+
   useEffect(() => {
     if (scr === SC.SPLASH) {
-      const tm = setTimeout(() => setScr(SC.LANG), 2000);
+      const tm = setTimeout(() => setScr(SC.LANG), 1200);
       return () => clearTimeout(tm);
     }
   }, [scr]);
@@ -730,7 +790,7 @@ export default function App() {
   // Firebase 채팅 리스너
   useEffect(() => {
     if (!chatU || !authUser) return;
-    const chatId = [authUser.uid, "demo_" + chatU.id].sort().join("_");
+    const chatId = [authUser.uid, chatU.uid || String(chatU.id)].sort().join("_");
     const msgsRef = ref(db, `${DB_CHATS}/${chatId}`);
     const unsub = onValue(msgsRef, (snap) => {
       if (snap.exists()) {
@@ -741,6 +801,40 @@ export default function App() {
     });
     return () => unsub();
   }, [chatU, authUser]);
+
+  // 상대방이 나를 좋아요 하면서 매칭이 성사된 경우(내가 먼저 좋아요 누른 쪽)
+  // 실시간으로 감지해서 MatchModal 띄우기
+  useEffect(() => {
+    if (!authUser) return;
+    initialMatchesLoadedRef.current = false;
+    matchesSeenRef.current = new Set();
+    const matchRef = ref(db, `${DB_MATCHES}/${authUser.uid}`);
+    const unsub = onValue(matchRef, async (snap) => {
+      const data = snap.exists() ? snap.val() : {};
+      const keys = Object.keys(data);
+      if (!initialMatchesLoadedRef.current) {
+        matchesSeenRef.current = new Set(keys);
+        initialMatchesLoadedRef.current = true;
+        return;
+      }
+      const newKeys = keys.filter(k => !matchesSeenRef.current.has(k));
+      for (const k of newKeys) {
+        matchesSeenRef.current.add(k);
+        try {
+          const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
+          if (!pSnap.exists()) continue;
+          const card = profileToCard(k, pSnap.val(), myP, intP);
+          if (!card) continue;
+          setMatches(p => p.some(x => x.id === k) ? p : [...p, card]);
+          setMatchUser(card);
+          setShowMatch(true);
+        } catch (e) {
+          console.warn("매치 프로필 로드 실패:", e.message);
+        }
+      }
+    });
+    return () => unsub();
+  }, [authUser, myP, intP]);
 
   const go = (s) => { setHist(h => [...h, scr]); setScr(s); };
   const back = () => { const h = [...hist]; const l = h.pop() || SC.HOME; setHist(h); setScr(l); };
@@ -781,11 +875,37 @@ export default function App() {
     setUser(profile);
     if (authUser) {
       await set(ref(db, `${DB_USERS}/${authUser.uid}`), profile);
+      await loadUsersAndRelations(authUser.uid, myP, intP, blocked);
     }
-    const m = USERS.filter(u => !blocked.includes(u.id) && (u.mp.some(x => intP.includes(x)) || u.ip.some(x => myP.includes(x))));
-    setMatches(m.length > 0 ? m : USERS.slice(0, 5));
     setScr(SC.HOME);
     st("Welcome to MyPiece! 🎉");
+  };
+
+  // 좋아요 + 상호 좋아요 시 매칭 처리
+  const handleLike = async (u) => {
+    if (!u || liked.includes(u.id)) { setSwpI(i => i + 1); return; }
+    setLiked(p => [...p, u.id]);
+    if (!authUser) { st("💕 " + t("like") + "!"); return; }
+    try {
+      await set(ref(db, `${DB_LIKES}/${authUser.uid}/${u.id}`), true);
+      const reverse = await get(ref(db, `${DB_LIKES}/${u.id}/${authUser.uid}`));
+      if (reverse.exists() && reverse.val()) {
+        const ts = Date.now();
+        matchesSeenRef.current.add(u.id);
+        await Promise.all([
+          set(ref(db, `${DB_MATCHES}/${authUser.uid}/${u.id}`), ts),
+          set(ref(db, `${DB_MATCHES}/${u.id}/${authUser.uid}`), ts),
+        ]);
+        setMatches(p => p.some(x => x.id === u.id) ? p : [...p, u]);
+        setMatchUser(u);
+        setShowMatch(true);
+        if (u.uid) sendPush(u.uid, "새로운 매칭! ✨", `${nick || "누군가"}와 서로 좋아요!`);
+      } else {
+        st("💕 " + t("like") + "!");
+      }
+    } catch (e) {
+      st("좋아요 실패: " + e.message);
+    }
   };
 
   // Firebase 이메일 회원가입
@@ -893,46 +1013,39 @@ export default function App() {
     const msgData = { text: inp, uid: authUser?.uid || "guest", time: ts, ts: Date.now() };
 
     if (authUser && chatU) {
-      const chatId = [authUser.uid, "demo_" + chatU.id].sort().join("_");
+      const chatId = [authUser.uid, chatU.uid || String(chatU.id)].sort().join("_");
       await push(ref(db, `${DB_CHATS}/${chatId}`), msgData);
       if (chatU.uid) sendPush(chatU.uid, `${nick || "누군가"}가 메시지를 보냈어요`, inp.slice(0, 50));
     } else {
       setMsgs(p => [...p, { id: Date.now(), from: "me", text: inp, time: ts }]);
     }
     setInp("");
-    setTyping(true);
-    setTimeout(() => {
-      setTyping(false);
-      const replies = ["Nice! 😊", "🙂", "Tell me more~", "Cool!", "❤️", "Really?", "That's interesting!"];
-      const reply = replies[Math.floor(Math.random() * replies.length)];
-      setMsgs(p => [...p, { id: Date.now() + 1, from: "them", text: reply, time: ts }]);
-    }, 1500);
   };
 
-  const filteredUsers = USERS.filter(u => !blocked.includes(u.id)).filter(u => gFilter === "all" || u.g === gFilter);
+  const filteredUsers = users.filter(u => !blocked.includes(u.id)).filter(u => gFilter === "all" || !u.g || u.g === gFilter);
 
   // ─── 색상 테마 ───
-  const A = "#e94560", AD = "#c23152", AS = "#ff6b81";
-  const SF = "#0f0f17", SL = "#161622", BD = "#1c1c2e";
+  const A = "#FF6B45", AD = "#E8502A", AS = "#FF9B7A";
+  const SF = "#faf6f3", SL = "#fff3ee", BD = "#e8d5c8";
   const base = {
     minHeight: "100vh",
-    background: "#07070b",
+    background: "#0d0d0d",
     fontFamily: "'Noto Sans KR', system-ui, sans-serif",
-    color: "#eee",
+    color: "#1a1a1a",
     maxWidth: 480,
     margin: "0 auto",
     position: "relative",
-    boxShadow: "0 0 60px rgba(0,0,0,0.5)"
+    boxShadow: "0 0 60px rgba(0,0,0,0.4)"
   };
   const btnStyle = (on) => ({
     width: "100%", padding: "15px 0", border: "none", borderRadius: 14,
-    background: on ? `linear-gradient(135deg,${A},${AD})` : "#333",
-    color: "#fff", fontSize: 15, fontWeight: 700,
-    cursor: on ? "pointer" : "not-allowed", opacity: on ? 1 : 0.4
+    background: on ? `linear-gradient(135deg,${A},${AD})` : "#e0d8d4",
+    color: on ? "#fff" : "#aaa", fontSize: 15, fontWeight: 700,
+    cursor: on ? "pointer" : "not-allowed", opacity: on ? 1 : 0.7
   });
   const iB = {
     width: "100%", padding: "14px 16px", border: `1px solid ${BD}`,
-    borderRadius: 12, background: SF, color: "#eee", fontSize: 15,
+    borderRadius: 12, background: SF, color: "#1a1a1a", fontSize: 15,
     outline: "none", boxSizing: "border-box"
   };
   const chip = (active, c) => ({
@@ -947,7 +1060,7 @@ export default function App() {
     <div style={{
       position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)",
       zIndex: 10000, padding: "12px 24px", borderRadius: 14,
-      background: "#222244ee", color: "#fff", fontSize: 13, fontWeight: 600,
+      background: `${A}ee`, color: "#fff", fontSize: 13, fontWeight: 600,
       maxWidth: 340, textAlign: "center", whiteSpace: "nowrap"
     }}>{toast}</div>
   ) : null;
@@ -957,26 +1070,26 @@ export default function App() {
       display: "inline-flex", alignItems: "center", gap: 3,
       fontSize: size - 2, color: "#4ade80", background: "#4ade8018",
       padding: "2px 8px", borderRadius: 8, fontWeight: 700
-    }}>✓ {t("badge")}</span>
+    }}>⭐ {t("badge")}</span>
   ) : null;
 
   const Nav = () => (
     <div style={{
       position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
       width: "100%", maxWidth: 480, display: "flex",
-      background: "#0a0a10", borderTop: `1px solid ${BD}`,
+      background: "#0d0d0d", borderTop: `1px solid ${BD}`,
       padding: "8px 0 10px", zIndex: 100
     }}>
       {[
-        { i: "🏠", l: t("home"), s: SC.HOME },
-        { i: "👥", l: t("lounge"), s: SC.LOUNGE },
-        { i: "💬", l: t("chat"), s: SC.HOME },
-        { i: "👤", l: t("my"), s: SC.PROFILE },
+        { i: "✨", l: t("home"), s: SC.HOME },
+        { i: "🌟", l: t("lounge"), s: SC.LOUNGE },
+        { i: "💌", l: t("chat"), s: SC.HOME },
+        { i: "🌸", l: t("my"), s: SC.PROFILE },
       ].map((tab, i) => (
         <button key={i} onClick={() => go(tab.s)} style={{
           flex: 1, background: "none", border: "none", cursor: "pointer",
           display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-          color: tab.s === scr ? A : "#444", fontSize: 18
+          color: tab.s === scr ? A : "#666", fontSize: 18
         }}>
           <span>{tab.i}</span>
           <span style={{ fontSize: 9, fontWeight: 600 }}>{tab.l}</span>
@@ -985,18 +1098,207 @@ export default function App() {
     </div>
   );
 
+  const MatchModal = () => (showMatch && matchUser) ? (
+    <div style={{ position: "fixed", inset: 0, zIndex: 99999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.88)", padding: "0 24px" }}>
+      <style>{`
+        @keyframes matchPop{0%{transform:scale(0.4);opacity:0}65%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+        @keyframes heartFloat{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-60px);opacity:0}}
+        @keyframes matchGlow{0%,100%{box-shadow:0 0 0px ${A}00}50%{box-shadow:0 0 40px ${A}88}}
+      `}</style>
+      <div style={{ animation: "matchPop 0.55s cubic-bezier(0.34,1.56,0.64,1) both", textAlign: "center", width: "100%", maxWidth: 360 }}>
+        {/* 하트 */}
+        <div style={{ fontSize: 52, marginBottom: 8 }}>💕</div>
+        <div style={{ fontSize: 34, fontWeight: 900, color: "#fff", marginBottom: 6, letterSpacing: -1 }}>It's a Match!</div>
+        <div style={{ fontSize: 14, color: "rgba(255,255,255,0.65)", marginBottom: 32 }}>You and <b style={{ color: AS }}>{matchUser.name}</b> liked each other ✨</div>
+
+        {/* 두 아바타 */}
+        <div style={{ display: "flex", gap: 28, justifyContent: "center", alignItems: "center", marginBottom: 32 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ width: 76, height: 76, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 800, color: "#fff", border: "3px solid #fff", margin: "0 auto 6px", animation: "matchGlow 2s infinite" }}>나</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>You</div>
+          </div>
+          <div style={{ fontSize: 28 }}>❤️</div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ width: 76, height: 76, borderRadius: "50%", background: `linear-gradient(135deg,${AS},${A})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 800, color: "#fff", border: "3px solid #fff", margin: "0 auto 6px", animation: "matchGlow 2s 0.3s infinite" }}>{matchUser.name[0]}</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{matchUser.name}</div>
+          </div>
+        </div>
+
+        {/* 피스 공통점 */}
+        {(() => {
+          const common = matchUser.mp.filter(x => intP.includes(x));
+          return common.length > 0 ? (
+            <div style={{ marginBottom: 24, padding: "10px 16px", borderRadius: 12, background: `${A}22`, border: `1px solid ${A}44` }}>
+              <div style={{ fontSize: 12, color: AS, fontWeight: 600 }}>✨ Piece Match: {common.map(i => P()[i]).join(", ")}</div>
+            </div>
+          ) : null;
+        })()}
+
+        <button onClick={() => { setShowMatch(false); setChatU(matchUser); setMsgs(matchUser.lm ? [{ id: 1, from: "them", text: matchUser.lm, time: "now" }] : []); go(SC.CHAT); }}
+          style={{ width: "100%", padding: "16px 0", borderRadius: 28, background: `linear-gradient(135deg,${A},${AD})`, border: "none", color: "#fff", fontSize: 16, fontWeight: 800, cursor: "pointer", marginBottom: 12 }}>
+          💌 Send Message
+        </button>
+        <button onClick={() => setShowMatch(false)}
+          style={{ width: "100%", padding: "12px 0", borderRadius: 20, background: "transparent", border: "1px solid rgba(255,255,255,0.25)", color: "rgba(255,255,255,0.55)", fontSize: 14, cursor: "pointer" }}>
+          Keep Swiping
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   // ═══ SPLASH ═══
   if (scr === SC.SPLASH) return (
-    <div style={{ ...base, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ ...base, minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
       <Head><title>MyPiece - Find Your Piece</title></Head>
-      <style>{`@keyframes pulse{0%,100%{opacity:0.8}50%{opacity:1}}`}</style>
-      <div style={{
-        fontSize: 52, fontWeight: 900, letterSpacing: -2,
-        background: `linear-gradient(135deg,${A},${AS})`,
-        WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-        animation: "pulse 2s infinite"
-      }}>MyPiece</div>
-      <div style={{ color: "#555", fontSize: 13, marginTop: 8, letterSpacing: 2 }}>Find Your Piece</div>
+      <style>{`
+        @keyframes fadeUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes pulse{0%,100%{opacity:0.85}50%{opacity:1}}
+      `}</style>
+
+      {/* 배경 글로우 */}
+      <div style={{ position:"absolute", width:520, height:520, borderRadius:"50%", background:`radial-gradient(circle, ${A}18 0%, transparent 68%)`, top:"0%", left:"50%", transform:"translateX(-50%)", pointerEvents:"none" }} />
+
+      {/* 세 개의 조각상 — 사진 프레임 스타일 */}
+      <div style={{ display:"flex", alignItems:"flex-end", gap:12, marginBottom:40, animation:"fadeUp 1s ease both" }}>
+
+        {/* 상반신 토르소 — 세로 사진 프레임 */}
+        <div style={{ transform:"rotate(-4deg) translateY(14px)", position:"relative" }}>
+          <div style={{
+            width:96, height:140, borderRadius:12, overflow:"hidden",
+            boxShadow:`0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08)`,
+            background:"#1a1006"
+          }}>
+            <svg width="96" height="140" viewBox="0 0 96 140" fill="none" style={{ display:"block" }}>
+              <defs>
+                <radialGradient id="rg1" cx="38%" cy="28%" r="65%">
+                  <stop stopColor="#FFE8D6"/>
+                  <stop offset="0.3" stopColor="#E8A882"/>
+                  <stop offset="0.65" stopColor="#C4784E"/>
+                  <stop offset="1" stopColor="#8B4A28"/>
+                </radialGradient>
+                <radialGradient id="hl1" cx="30%" cy="20%" r="40%">
+                  <stop stopColor="rgba(255,240,220,0.55)"/>
+                  <stop offset="1" stopColor="rgba(255,240,220,0)"/>
+                </radialGradient>
+                <linearGradient id="bot1" x1="48" y1="90" x2="48" y2="140" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="rgba(0,0,0,0)"/>
+                  <stop offset="1" stopColor="rgba(0,0,0,0.55)"/>
+                </linearGradient>
+              </defs>
+              {/* 배경 — 스튜디오 */}
+              <rect width="96" height="140" fill="#1e120a"/>
+              <ellipse cx="48" cy="50" rx="56" ry="60" fill="#2a1a0e" opacity="0.6"/>
+              {/* 목 */}
+              <path d="M48 8 C43 8 39 11 38 17 L37 28 C40 27 44 26 48 26 C52 26 56 27 59 28 L58 17 C57 11 53 8 48 8 Z" fill="url(#rg1)"/>
+              {/* 어깨·가슴·몸통 */}
+              <path d="M37 28 C22 31 5 41 2 60 C-1 74 4 90 13 99 C19 106 28 110 32 118 L32 138 L64 138 L64 118 C68 110 77 106 83 99 C92 90 97 74 94 60 C91 41 74 31 59 28 Z" fill="url(#rg1)"/>
+              {/* 하이라이트 */}
+              <path d="M37 28 C22 31 5 41 2 60 C-1 74 4 90 13 99 C19 106 28 110 32 118 L32 138 L64 138 L64 118 C68 110 77 106 83 99 C92 90 97 74 94 60 C91 41 74 31 59 28 Z" fill="url(#hl1)"/>
+              {/* 쇄골 라인 */}
+              <path d="M28 42 Q48 38 68 42" stroke="rgba(255,220,190,0.25)" strokeWidth="1.2" fill="none"/>
+              {/* 하단 페이드 */}
+              <rect width="96" height="140" fill="url(#bot1)"/>
+              {/* 필름 그레인 느낌 — 미세 노이즈 */}
+              <rect width="96" height="140" fill="rgba(255,200,150,0.03)" style={{mixBlendMode:"overlay"}}/>
+            </svg>
+            {/* 사진 느낌 비네팅 */}
+            <div style={{ position:"absolute", inset:0, borderRadius:12, boxShadow:"inset 0 0 30px rgba(0,0,0,0.5)", pointerEvents:"none" }}/>
+          </div>
+        </div>
+
+        {/* 전신 뒷모습 사선 컷 — 세로 긴 프레임 */}
+        <div style={{ transform:"translateY(-6px) scale(1.04)", position:"relative" }}>
+          <div style={{
+            width:82, height:200, borderRadius:14, overflow:"hidden",
+            boxShadow:`0 16px 50px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.1)`,
+            background:"#120c06", clipPath:"polygon(0 0, 100% 0, 85% 100%, 0 100%)"
+          }}>
+            <svg width="82" height="200" viewBox="0 0 82 200" fill="none" style={{ display:"block" }}>
+              <defs>
+                <radialGradient id="rg2" cx="45%" cy="22%" r="70%">
+                  <stop stopColor="#F5DCC8"/>
+                  <stop offset="0.35" stopColor="#D4956A"/>
+                  <stop offset="0.7" stopColor="#A0623C"/>
+                  <stop offset="1" stopColor="#5C3018"/>
+                </radialGradient>
+                <radialGradient id="hl2" cx="60%" cy="15%" r="45%">
+                  <stop stopColor="rgba(255,230,200,0.4)"/>
+                  <stop offset="1" stopColor="rgba(255,230,200,0)"/>
+                </radialGradient>
+                <linearGradient id="bot2" x1="41" y1="140" x2="41" y2="200" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="rgba(0,0,0,0)"/>
+                  <stop offset="1" stopColor="rgba(0,0,0,0.65)"/>
+                </linearGradient>
+              </defs>
+              <rect width="82" height="200" fill="#180f07"/>
+              <ellipse cx="41" cy="60" rx="50" ry="80" fill="#241508" opacity="0.5"/>
+              {/* 머리 */}
+              <ellipse cx="41" cy="17" rx="13" ry="15" fill="url(#rg2)"/>
+              {/* 목 */}
+              <path d="M35 30 L35 40 L47 40 L47 30 C45 28 37 28 35 30 Z" fill="url(#rg2)"/>
+              {/* 등 */}
+              <path d="M35 40 C22 42 10 52 7 68 C4 82 9 96 17 105 C22 111 29 115 32 122 L32 138 L50 138 L50 122 C53 115 60 111 65 105 C73 96 78 82 75 68 C72 52 60 42 47 40 Z" fill="url(#rg2)"/>
+              {/* 허리·엉덩이 */}
+              <path d="M32 138 C25 142 16 152 12 167 C8 181 13 194 20 199 L31 197 C33 189 35 179 35 169 L35 152 L47 152 L47 169 C47 179 49 189 51 197 L62 199 C69 194 74 181 70 167 C66 152 57 142 50 138 Z" fill="url(#rg2)"/>
+              <path d="M32 138 C25 142 16 152 12 167 C8 181 13 194 20 199 L31 197 C33 189 35 179 35 169 L35 152 L47 152 L47 169 C47 179 49 189 51 197 L62 199 C69 194 74 181 70 167 C66 152 57 142 50 138 Z" fill="url(#hl2)"/>
+              {/* 척추 하이라이트 */}
+              <path d="M41 44 Q40 90 41 136" stroke="rgba(255,210,170,0.18)" strokeWidth="1.5" fill="none"/>
+              <rect width="82" height="200" fill="url(#bot2)"/>
+            </svg>
+            <div style={{ position:"absolute", inset:0, boxShadow:"inset 0 0 35px rgba(0,0,0,0.55)", pointerEvents:"none" }}/>
+          </div>
+        </div>
+
+        {/* 하반신 토르소 — 정방형 프레임 */}
+        <div style={{ transform:"rotate(4deg) translateY(10px)", position:"relative" }}>
+          <div style={{
+            width:96, height:130, borderRadius:12, overflow:"hidden",
+            boxShadow:`0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.07)`,
+            background:"#140e08"
+          }}>
+            <svg width="96" height="130" viewBox="0 0 96 130" fill="none" style={{ display:"block" }}>
+              <defs>
+                <radialGradient id="rg3" cx="42%" cy="30%" r="65%">
+                  <stop stopColor="#F8E0CC"/>
+                  <stop offset="0.3" stopColor="#D9956A"/>
+                  <stop offset="0.65" stopColor="#B06535"/>
+                  <stop offset="1" stopColor="#6E3A16"/>
+                </radialGradient>
+                <radialGradient id="hl3" cx="35%" cy="18%" r="50%">
+                  <stop stopColor="rgba(255,235,210,0.45)"/>
+                  <stop offset="1" stopColor="rgba(255,235,210,0)"/>
+                </radialGradient>
+                <linearGradient id="bot3" x1="48" y1="80" x2="48" y2="130" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="rgba(0,0,0,0)"/>
+                  <stop offset="1" stopColor="rgba(0,0,0,0.6)"/>
+                </linearGradient>
+              </defs>
+              <rect width="96" height="130" fill="#1c1008"/>
+              <ellipse cx="48" cy="50" rx="55" ry="55" fill="#261608" opacity="0.5"/>
+              {/* 허리·골반 */}
+              <path d="M34 4 L62 4 C76 8 88 22 90 40 C92 56 86 72 75 81 C68 87 63 97 63 108 L63 128 L50 128 C50 118 48 109 48 105 C48 109 46 118 46 128 L33 128 L33 108 C33 97 28 87 21 81 C10 72 4 56 6 40 C8 22 20 8 34 4 Z" fill="url(#rg3)"/>
+              <path d="M34 4 L62 4 C76 8 88 22 90 40 C92 56 86 72 75 81 C68 87 63 97 63 108 L63 128 L50 128 C50 118 48 109 48 105 C48 109 46 118 46 128 L33 128 L33 108 C33 97 28 87 21 81 C10 72 4 56 6 40 C8 22 20 8 34 4 Z" fill="url(#hl3)"/>
+              {/* 허리 라인 */}
+              <path d="M26 30 Q48 24 70 30" stroke="rgba(255,210,170,0.2)" strokeWidth="1" fill="none"/>
+              <rect width="96" height="130" fill="url(#bot3)"/>
+            </svg>
+            <div style={{ position:"absolute", inset:0, borderRadius:12, boxShadow:"inset 0 0 28px rgba(0,0,0,0.5)", pointerEvents:"none" }}/>
+          </div>
+        </div>
+
+      </div>
+
+      {/* 로고 + 태그라인 */}
+      <div style={{ textAlign:"center", animation:"fadeUp 1s ease 0.25s both" }}>
+        <div style={{
+          fontSize:52, fontWeight:900, letterSpacing:-2,
+          background:`linear-gradient(135deg,${A},${AS})`,
+          WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent",
+          animation:"pulse 2.5s ease-in-out infinite"
+        }}>MyPiece</div>
+        <div style={{ color:"#999", fontSize:13, marginTop:10, letterSpacing:2, textTransform:"uppercase" }}>Find Your Piece</div>
+        <div style={{ color:"#ccc", fontSize:11, marginTop:6 }}>Beauty is in every detail ✨</div>
+      </div>
     </div>
   );
 
@@ -1021,7 +1323,7 @@ export default function App() {
             cursor: "pointer", display: "flex", alignItems: "center", gap: 10
           }}>
             <span style={{ fontSize: 20 }}>{l.flag}</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: lang === l.code ? A : "#bbb" }}>{l.name}</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: lang === l.code ? A : "#555" }}>{l.name}</span>
           </button>
         ))}
       </div>
@@ -1035,15 +1337,15 @@ export default function App() {
     const checkItem = (checked, onChange, label) => (
       <div onClick={onChange} style={{
         display: "flex", alignItems: "flex-start", gap: 12, padding: "14px 16px",
-        background: checked ? "#e9456018" : "#1c1c2e", borderRadius: 12,
-        border: `1px solid ${checked ? A : "#1c1c2e"}`, cursor: "pointer", marginBottom: 10
+        background: checked ? A + "18" : SL, borderRadius: 12,
+        border: `1px solid ${checked ? A : BD}`, cursor: "pointer", marginBottom: 10
       }}>
         <div style={{
           width: 20, height: 20, borderRadius: 6, border: `2px solid ${checked ? A : "#444"}`,
           background: checked ? A : "transparent", flexShrink: 0, marginTop: 1,
           display: "flex", alignItems: "center", justifyContent: "center"
         }}>{checked && <span style={{ color: "#fff", fontSize: 12, fontWeight: 900 }}>✓</span>}</div>
-        <span style={{ fontSize: 13, color: checked ? "#eee" : "#888", lineHeight: 1.5 }}>{label}</span>
+        <span style={{ fontSize: 13, color: checked ? "#1a1a1a" : "#888", lineHeight: 1.5 }}>{label}</span>
       </div>
     );
     return (
@@ -1056,9 +1358,16 @@ export default function App() {
         </div>
 
         <div style={{ marginBottom: 28 }}>
-          {checkItem(ageCheck1, () => setAgeCheck1(v => !v), "본인은 만 19세 이상임을 확인합니다.")}
-          {checkItem(ageCheck2, () => setAgeCheck2(v => !v), "성인용 콘텐츠가 포함될 수 있으며, 이에 동의합니다.")}
-          {checkItem(ageCheck3, () => setAgeCheck3(v => !v), "허위 정보 입력 시 발생하는 법적 책임은 본인에게 있음을 인지합니다.")}
+          {checkItem(ageCheck1, () => setAgeCheck1(v => !v), "I confirm I am 19 years of age or older.")}
+          {checkItem(ageCheck2, () => setAgeCheck2(v => !v), (
+            <>
+              I agree to MyPiece's{" "}
+              <Link href="/terms" onClick={e => e.stopPropagation()} style={{ color: A, textDecoration: "underline", fontWeight: 700 }}>Terms of Service</Link>
+              {" "}and{" "}
+              <Link href="/privacy" onClick={e => e.stopPropagation()} style={{ color: A, textDecoration: "underline", fontWeight: 700 }}>Privacy Policy</Link>.
+            </>
+          ))}
+          {checkItem(ageCheck3, () => setAgeCheck3(v => !v), "I understand that providing false information is my sole legal responsibility.")}
         </div>
 
         <button style={btnStyle(ageAllChecked)} onClick={() => { if (ageAllChecked) setScr(SC.LOGIN); }}>
@@ -1130,7 +1439,7 @@ export default function App() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <button onClick={() => step > 0 ? setStep(step - 1) : setScr(SC.LOGIN)}
           style={{ background: "none", border: "none", color: "#666", fontSize: 14, cursor: "pointer" }}>
-          ← {t("back")}
+          ‹ Back
         </button>
         <button onClick={handleLogout}
           style={{ background: "none", border: "none", color: "#444", fontSize: 12, cursor: "pointer" }}>
@@ -1139,7 +1448,7 @@ export default function App() {
       </div>
       <div style={{ display: "flex", gap: 5, marginBottom: 32 }}>
         {[0, 1, 2, 3].map(i => (
-          <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? A : "#1a1a28" }} />
+          <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? A : BD }} />
         ))}
       </div>
 
@@ -1158,7 +1467,7 @@ export default function App() {
       {step === 1 && (
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>
-            {t("myPiece")} <span style={{ color: A }}>✦</span>
+            {t("myPiece")} <span style={{ color: A }}>✨</span>
           </h2>
           <p style={{ color: "#555", fontSize: 13, marginBottom: 20 }}>{t("myPieceDesc")}</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
@@ -1176,7 +1485,7 @@ export default function App() {
       {step === 2 && (
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>
-            {t("intPiece")} <span style={{ color: AS }}>♡</span>
+            {t("intPiece")} <span style={{ color: AS }}>🤍</span>
           </h2>
           <p style={{ color: "#555", fontSize: 13, marginBottom: 20 }}>{t("intPieceDesc")}</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
@@ -1214,7 +1523,7 @@ export default function App() {
                   border: `1px solid ${sel ? A : BD}`,
                   background: sel ? A + "18" : SF,
                   color: sel ? A : "#777", fontSize: 14, fontWeight: 600, cursor: "pointer"
-                }}>{P()[i]} {sel ? "✓" : ""}</button>
+                }}>{P()[i]} {sel ? "✨" : ""}</button>
               );
             })}
           </div>
@@ -1236,18 +1545,18 @@ export default function App() {
                       {photoURLs[i] && s === "ok" && (
                         <img src={photoURLs[i]} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.15 }} />
                       )}
-                      {uploading[i] && <div><div style={{ fontSize: 22 }}>⬆️</div><div style={{ color: "#888", fontSize: 12, marginTop: 6 }}>업로드 중...</div></div>}
-                      {!uploading[i] && s === "scanning" && <div><div style={{ fontSize: 22 }}>🔍</div><div style={{ color: "#888", fontSize: 12, marginTop: 6 }}>{t("scanning")}</div></div>}
-                      {!uploading[i] && s === "ok" && <div><div style={{ fontSize: 28, color: "#4ade80" }}>✓</div><div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, marginTop: 4 }}>{t("scanOk")}</div></div>}
+                      {uploading[i] && <div><div style={{ fontSize: 22 }}>✨</div><div style={{ color: "#888", fontSize: 12, marginTop: 6 }}>업로드 중...</div></div>}
+                      {!uploading[i] && s === "scanning" && <div><div style={{ fontSize: 22 }}>🔮</div><div style={{ color: "#888", fontSize: 12, marginTop: 6 }}>{t("scanning")}</div></div>}
+                      {!uploading[i] && s === "ok" && <div><div style={{ fontSize: 28 }}>✅</div><div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, marginTop: 4 }}>{t("scanOk")}</div></div>}
                       {!uploading[i] && s === "fail" && (
                         <div>
-                          <div style={{ fontSize: 28, color: "#ef4444" }}>✗</div>
+                          <div style={{ fontSize: 28 }}>❌</div>
                           <div style={{ color: "#ef4444", fontSize: 12, marginTop: 4 }}>{t("scanFail")}</div>
                           <button onClick={e => { e.stopPropagation(); setScans(sc => { const n = { ...sc }; delete n[i]; return n; }); setPhotoURLs(p => { const n = { ...p }; delete n[i]; return n; }); setVDone(false); }}
                             style={{ color: A, fontSize: 11, marginTop: 6, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>다시 업로드</button>
                         </div>
                       )}
-                      {!uploading[i] && !s && <div><div style={{ fontSize: 28, opacity: 0.3 }}>📷</div><div style={{ color: "#555", fontSize: 12, marginTop: 6 }}>탭하여 사진 선택</div></div>}
+                      {!uploading[i] && !s && <div><div style={{ fontSize: 28, opacity: 0.4 }}>🤳</div><div style={{ color: "#555", fontSize: 12, marginTop: 6 }}>탭하여 사진 선택</div></div>}
                     </div>
                   </div>
                 );
@@ -1271,226 +1580,207 @@ export default function App() {
   if (isDesktop && user && [SC.HOME, SC.LOUNGE, SC.CHAT].includes(scr)) {
     const pool = filteredUsers.filter(u => u.mp.some(x => intP.includes(x)) || u.ip.some(x => myP.includes(x)));
     const m = pool[swpI % Math.max(pool.length, 1)];
-    const panelStyle = { height: "100vh", overflowY: "auto", borderRight: `1px solid ${BD}` };
     return (
-      <div style={{ display: "flex", width: "100vw", minHeight: "100vh", background: "#07070b", color: "#eee", fontFamily: "'Noto Sans KR', system-ui, sans-serif" }}>
+      <div style={{ display: "flex", width: "100vw", height: "100vh", background: "#0d0d0d", color: "#1a1a1a", fontFamily: "'Noto Sans KR', system-ui, sans-serif", overflow: "hidden" }}>
         <Toast />
+        <MatchModal />
 
-        {/* 좌: 디스커버 */}
-        <div style={{ ...panelStyle, width: 340, flexShrink: 0, padding: "20px 20px 20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <span style={{ fontSize: 20, fontWeight: 900, background: `linear-gradient(135deg,${A},${AS})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>MyPiece</span>
-            <button onClick={() => setShowGF(!showGF)} style={{ padding: "5px 12px", borderRadius: 16, background: SL, border: `1px solid ${BD}`, color: "#aaa", fontSize: 11, cursor: "pointer" }}>
-              {gFilter === "all" ? "👥" : gFilter === "F" ? "♀" : "♂"} Filter
-            </button>
-          </div>
-          {showGF && (
-            <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 12, background: SL, border: `1px solid ${BD}`, display: "flex", gap: 6 }}>
-              {[{ v: "all", l: "All" }, { v: "F", l: "♀" }, { v: "M", l: "♂" }].map(o => (
-                <button key={o.v} onClick={() => { setGFilter(o.v); setShowGF(false); setSwpI(0); }}
-                  style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${gFilter === o.v ? A : BD}`, background: gFilter === o.v ? A+"18" : "transparent", color: gFilter === o.v ? A : "#888", fontSize: 12, cursor: "pointer" }}>{o.l}</button>
-              ))}
-            </div>
-          )}
-          <div style={{ fontSize: 11, color: "#555", textAlign: "center", marginBottom: 10 }}>{t("swipeHint")}</div>
-          {m && (
-            <div style={{ background: `linear-gradient(160deg,${SF},${SL})`, borderRadius: 20, border: `1px solid ${BD}`, overflow: "hidden" }}>
-              <div style={{ height: 160, background: `linear-gradient(135deg,${A}20,${AD}20)`, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-                <div style={{ width: 72, height: 72, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 700, color: "#fff" }}>{m.name[0]}</div>
-                {m.on && <div style={{ position: "absolute", top: 12, right: 12, width: 10, height: 10, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade8066" }} />}
-                <div style={{ position: "absolute", top: 12, left: 12 }}><Badge has={m.badge} /></div>
-                <div style={{ position: "absolute", bottom: 12, right: 12, background: "#000a", borderRadius: 8, padding: "3px 10px" }}>
-                  <span style={{ fontSize: 15, fontWeight: 900, color: mc(m.pct) }}>{m.pct}%</span>
-                </div>
-              </div>
-              <div style={{ padding: "14px 16px" }}>
-                <div style={{ fontSize: 17, fontWeight: 800 }}>{m.name} <span style={{ fontSize: 12, color: "#555", fontWeight: 400 }}>{m.age} {m.g}</span></div>
-                <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{m.region} · {m.on ? t("online") : m.la}</div>
-                <p style={{ fontSize: 12, color: "#888", margin: "8px 0", lineHeight: 1.5 }}>{m.bio}</p>
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }}>
-                  {m.mp.map(i => <span key={"m"+i} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, background: A+"18", color: A }}>✦ {P()[i]}</span>)}
-                  {m.ip.map(i => <span key={"i"+i} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, background: AS+"18", color: AS }}>♡ {P()[i]}</span>)}
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setSwpI(i => i + 1)} style={{ width: 44, height: 44, borderRadius: "50%", background: SL, border: `2px solid ${BD}`, color: "#666", fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
-                  <button onClick={() => { setLiked(p => p.includes(m.id) ? p : [...p, m.id]); st("♡ " + t("like") + "!"); setSwpI(i => i + 1); }}
-                    style={{ flex: 1, height: 44, borderRadius: 22, background: `linear-gradient(135deg,${AS},${A})`, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                    {liked.includes(m.id) ? "♥" : "♡"} {t("like")}
-                  </button>
-                  <button onClick={() => { setChatU(m); setMsgs(m.lm ? [{ id: 1, from: "them", text: m.lm, time: "now" }] : []); }}
-                    style={{ width: 44, height: 44, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, border: "none", color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>💬</button>
-                </div>
-              </div>
-            </div>
-          )}
+        {/* 좌: MyPiece + Lounge (세로 분할) */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", borderRight: `1px solid ${BD}` }}>
 
-          {/* 온라인 NOW */}
-          <div style={{ marginTop: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4ade80", display: "inline-block", boxShadow: "0 0 6px #4ade8099" }} />
-              지금 온라인
-            </div>
-            <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6 }}>
-              {USERS.filter(u => u.on).map(u => (
-                <div key={u.id} onClick={() => { setChatU(u); setMsgs(u.lm ? [{ id: 1, from: "them", text: u.lm, time: "now" }] : []); }}
-                  style={{ flexShrink: 0, textAlign: "center", cursor: "pointer" }}>
-                  <div style={{ position: "relative", width: 46, height: 46, margin: "0 auto 4px" }}>
-                    <div style={{ width: 46, height: 46, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", border: `2px solid ${A}` }}>{u.name[0]}</div>
-                    <div style={{ position: "absolute", bottom: 1, right: 1, width: 10, height: 10, borderRadius: "50%", background: "#4ade80", border: "2px solid #07070b" }} />
+          {/* 상단 MyPiece (30vh) */}
+          <div style={{ height: "30vh", overflowY: "auto", borderBottom: `1px solid ${BD}`, padding: "16px 20px", display: "flex", gap: 16, alignItems: "flex-start" }}>
+            {/* 매치 카드 */}
+            <div style={{ flexShrink: 0, width: 200 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 17, fontWeight: 900, background: `linear-gradient(135deg,${A},${AS})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>MyPiece</span>
+                <button onClick={() => setShowGF(!showGF)} style={{ padding: "3px 10px", borderRadius: 16, background: SL, border: `1px solid ${BD}`, color: "#666", fontSize: 10, cursor: "pointer" }}>
+                  {gFilter === "all" ? "🫂" : gFilter === "F" ? "👩" : "👨"} Filter
+                </button>
+              </div>
+              {showGF && (
+                <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 10, background: SL, border: `1px solid ${BD}`, display: "flex", gap: 4 }}>
+                  {[{ v: "all", l: "All" }, { v: "F", l: "👩 Her" }, { v: "M", l: "👨 Him" }].map(o => (
+                    <button key={o.v} onClick={() => { setGFilter(o.v); setShowGF(false); setSwpI(0); }}
+                      style={{ flex: 1, padding: "6px 0", borderRadius: 6, border: `1px solid ${gFilter === o.v ? A : BD}`, background: gFilter === o.v ? A+"18" : "transparent", color: gFilter === o.v ? A : "#888", fontSize: 11, cursor: "pointer" }}>{o.l}</button>
+                  ))}
+                </div>
+              )}
+              {m && (
+                <div style={{ background: `linear-gradient(160deg,${SF},${SL})`, borderRadius: 16, border: `1px solid ${BD}`, overflow: "hidden" }}>
+                  <div style={{ height: 80, background: `linear-gradient(135deg,${A}20,${AD}20)`, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+                    <div style={{ width: 44, height: 44, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#fff" }}>{m.name[0]}</div>
+                    {m.on && <div style={{ position: "absolute", top: 8, right: 8, width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade8066" }} />}
+                    <div style={{ position: "absolute", top: 8, left: 8 }}><Badge has={m.badge} /></div>
+                    <div style={{ position: "absolute", bottom: 6, right: 8, background: "#000a", borderRadius: 6, padding: "2px 7px" }}>
+                      <span style={{ fontSize: 12, fontWeight: 900, color: mc(m.pct) }}>{m.pct}%</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 10, color: "#888", maxWidth: 46, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
+                  <div style={{ padding: "8px 10px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 800 }}>{m.name} <span style={{ fontSize: 10, color: "#555", fontWeight: 400 }}>{m.age} {m.g}</span></div>
+                    <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
+                      <button onClick={() => setSwpI(i => i + 1)} style={{ width: 34, height: 34, borderRadius: "50%", background: SL, border: `2px solid ${BD}`, color: "#999", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>👋</button>
+                      <button onClick={() => { handleLike(m); setSwpI(idx => idx + 1); }}
+                        style={{ flex: 1, height: 34, borderRadius: 17, background: `linear-gradient(135deg,${AS},${A})`, border: "none", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        {liked.includes(m.id) ? "❤️" : "🤍"} {t("like")}
+                      </button>
+                      <button onClick={() => { setChatU(m); setMsgs(m.lm ? [{ id: 1, from: "them", text: m.lm, time: "now" }] : []); }}
+                        style={{ width: 34, height: 34, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, border: "none", color: "#fff", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>💌</button>
+                    </div>
+                  </div>
                 </div>
-              ))}
+              )}
+            </div>
+
+            {/* 우측: 통계 + 온라인 */}
+            <div style={{ flex: 1 }}>
+              {/* 매칭 통계 4열 */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
+                {[
+                  { label: "Likes", value: liked.length, icon: "💕", color: A },
+                  { label: "Matches", value: matches.length, icon: "✨", color: "#fbbf24" },
+                  { label: "Visitors", value: 24, icon: "👀", color: "#60a5fa" },
+                  { label: "Match %", value: "78%", icon: "📈", color: "#4ade80" },
+                ].map(stat => (
+                  <div key={stat.label} style={{ background: SL, borderRadius: 10, padding: "8px 10px", border: `1px solid ${BD}`, textAlign: "center" }}>
+                    <div style={{ fontSize: 14, marginBottom: 2 }}>{stat.icon}</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: stat.color }}>{stat.value}</div>
+                    <div style={{ fontSize: 9, color: "#555" }}>{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+              {/* 신규 멤버 */}
+              {users.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#555", marginBottom: 7, display: "flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ fontSize: 11 }}>🌟</span>
+                    New Members
+                  </div>
+                  <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+                    {users.slice(0, 12).map(u => (
+                      <div key={u.id}
+                        style={{ flexShrink: 0, textAlign: "center" }}>
+                        <div style={{ width: 38, height: 38, margin: "0 auto 3px", borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#fff", border: `2px solid ${A}` }}>{u.name[0]}</div>
+                        <div style={{ fontSize: 9, color: "#888", maxWidth: 38, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* 매칭 통계 */}
-          <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {[
-              { label: "좋아요", value: liked.length, icon: "♡", color: A },
-              { label: "매칭", value: matches.length, icon: "✦", color: "#fbbf24" },
-              { label: "방문자", value: 24, icon: "👁", color: "#60a5fa" },
-              { label: "매칭률", value: "78%", icon: "📊", color: "#4ade80" },
-            ].map(stat => (
-              <div key={stat.label} style={{ background: SL, borderRadius: 12, padding: "12px 14px", border: `1px solid ${BD}` }}>
-                <div style={{ fontSize: 18, marginBottom: 4 }}>{stat.icon}</div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: stat.color }}>{stat.value}</div>
-                <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>{stat.label}</div>
+          {/* 하단 Lounge (flex:1) */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 2px" }}>{t("lounge")}</h2>
+                <p style={{ fontSize: 10, color: "#555", margin: 0 }}>Browse profiles</p>
               </div>
-            ))}
-          </div>
+              <div style={{ display: "flex", gap: 5 }}>
+                {[{ v: "all", l: "All" }, { v: "F", l: "👩 Her" }, { v: "M", l: "👨 Him" }].map(o => (
+                  <button key={o.v} onClick={() => { setGFilter(o.v); setSwpI(0); }}
+                    style={{ padding: "4px 10px", borderRadius: 14, border: `1px solid ${gFilter === o.v ? A : BD}`, background: gFilter === o.v ? A+"18" : "transparent", color: gFilter === o.v ? A : "#666", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{o.l}</button>
+                ))}
+              </div>
+            </div>
 
-          {/* 최근 좋아요 */}
-          {liked.length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 10 }}>내가 좋아요한 사람</div>
-              {USERS.filter(u => liked.includes(u.id)).map(u => (
-                <div key={u.id} onClick={() => { setChatU(u); setMsgs(u.lm ? [{ id: 1, from: "them", text: u.lm, time: "now" }] : []); }}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${BD}`, cursor: "pointer" }}>
-                  <div style={{ width: 34, height: 34, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0 }}>{u.name[0]}</div>
+            {/* 인기 피스 태그 */}
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
+              {P().slice(0, 8).map((p, i) => (
+                <span key={i} style={{ padding: "3px 9px", borderRadius: 20, background: intP.includes(i) ? A+"22" : SF, border: `1px solid ${intP.includes(i) ? A : BD}`, color: intP.includes(i) ? A : "#666", fontSize: 10, cursor: "pointer" }}>#{p}</span>
+              ))}
+            </div>
+
+            {/* 유저 그리드 */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8, marginBottom: 20 }}>
+              {filteredUsers.map(u => (
+                <div key={u.id} onClick={() => { setPhotoT(u); setScr(SC.UPROF); }}
+                  style={{ borderRadius: 12, background: SL, border: `1px solid ${BD}`, cursor: "pointer", overflow: "hidden" }}>
+                  <div style={{ height: 80, background: `linear-gradient(135deg,${A}15,${AD}15)`, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: u.v ? `linear-gradient(135deg,${A},${AD})` : "#e8d8d0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff" }}>{u.name[0]}</div>
+                    {u.on && <div style={{ position: "absolute", top: 5, right: 5, width: 7, height: 7, borderRadius: "50%", background: "#4ade80" }} />}
+                    {u.badge && <div style={{ position: "absolute", top: 5, left: 5, fontSize: 8, background: "#ffffff99", padding: "1px 4px", borderRadius: 4 }}>⭐</div>}
+                    <div style={{ position: "absolute", bottom: 5, right: 5, fontSize: 10, fontWeight: 800, color: mc(u.pct) }}>{u.pct}%</div>
+                  </div>
+                  <div style={{ padding: "6px 8px" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{u.name} <span style={{ fontSize: 9, color: "#555" }}>{u.age}</span></div>
+                    <div style={{ fontSize: 9, color: "#555", marginTop: 1 }}>{u.region}</div>
+                    <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
+                      {u.mp.slice(0, 2).map(i => <span key={i} style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: A+"18", color: A }}>{P()[i]}</span>)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* 나를 봤을 수도 있는 사람 (블러) */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#555" }}>👀 나를 본 사람</div>
+                <span style={{ fontSize: 9, color: "#555" }}>클릭해서 프로필 보기</span>
+              </div>
+              <div style={{ display: "flex", gap: 7 }}>
+                {users.slice(0, 4).map(u => (
+                  <div key={u.id} onClick={() => { setPhotoT(u); setScr(SC.UPROF); }} style={{ flexShrink: 0, textAlign: "center", cursor: "pointer" }}>
+                    <div style={{ width: 44, height: 44, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", margin: "0 auto 3px", filter: "blur(5px)", transition: "filter 0.2s" }}
+                      onMouseEnter={e => e.currentTarget.style.filter = "none"}
+                      onMouseLeave={e => e.currentTarget.style.filter = "blur(5px)"}
+                    >{u.name[0]}</div>
+                    <div style={{ fontSize: 9, color: "#444" }}>?</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Top Picks */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#555", marginBottom: 8 }}>✨ Top Picks</div>
+              {users.filter(u => u.pct >= 80).map(u => (
+                <div key={u.id} onClick={() => { setPhotoT(u); setScr(SC.UPROF); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, background: SL, border: `1px solid ${BD}`, marginBottom: 6, cursor: "pointer" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0, position: "relative" }}>
+                    {u.name[0]}
+                    {u.on && <div style={{ position: "absolute", bottom: 0, right: 0, width: 8, height: 8, borderRadius: "50%", background: "#4ade80", border: "2px solid #ffffff" }} />}
+                  </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{u.name}</div>
-                    <div style={{ fontSize: 10, color: "#555" }}>{u.region} · {u.pct}% 매칭</div>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{u.name} <span style={{ fontSize: 9, color: "#555" }}>{u.age} {u.g}</span></div>
+                    <div style={{ fontSize: 10, color: "#777", marginTop: 1 }}>{u.bio}</div>
                   </div>
-                  <span style={{ color: A, fontSize: 14 }}>♥</span>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: mc(u.pct) }}>{u.pct}%</div>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-
-        {/* 중: 라운지 */}
-        <div style={{ ...panelStyle, flex: 1, padding: "20px 20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-            <div>
-              <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 4px" }}>{t("lounge")}</h2>
-              <p style={{ fontSize: 11, color: "#555", margin: 0 }}>Browse profiles</p>
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {[{ v: "all", l: "ALL" }, { v: "F", l: "♀" }, { v: "M", l: "♂" }].map(o => (
-                <button key={o.v} onClick={() => { setGFilter(o.v); setSwpI(0); }}
-                  style={{ padding: "5px 12px", borderRadius: 16, border: `1px solid ${gFilter === o.v ? A : BD}`, background: gFilter === o.v ? A+"18" : "transparent", color: gFilter === o.v ? A : "#666", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{o.l}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* 인기 피스 태그 */}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
-            {P().slice(0, 8).map((p, i) => (
-              <span key={i} style={{ padding: "4px 10px", borderRadius: 20, background: intP.includes(i) ? A+"22" : SF, border: `1px solid ${intP.includes(i) ? A : BD}`, color: intP.includes(i) ? A : "#666", fontSize: 11, cursor: "pointer" }}>#{p}</span>
-            ))}
-          </div>
-
-          {/* 유저 그리드 */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
-            {filteredUsers.map(u => (
-              <div key={u.id} onClick={() => { setPhotoT(u); setScr(SC.UPROF); }}
-                style={{ borderRadius: 14, background: SL, border: `1px solid ${BD}`, cursor: "pointer", overflow: "hidden" }}>
-                <div style={{ height: 90, background: `linear-gradient(135deg,${A}15,${AD}15)`, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: u.v ? `linear-gradient(135deg,${A},${AD})` : "#2a2a3a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff" }}>{u.name[0]}</div>
-                  {u.on && <div style={{ position: "absolute", top: 6, right: 6, width: 8, height: 8, borderRadius: "50%", background: "#4ade80" }} />}
-                  {u.badge && <div style={{ position: "absolute", top: 6, left: 6, fontSize: 8, color: "#4ade80", background: "#4ade8018", padding: "1px 5px", borderRadius: 5 }}>✓</div>}
-                  <div style={{ position: "absolute", bottom: 6, right: 6, fontSize: 11, fontWeight: 800, color: mc(u.pct) }}>{u.pct}%</div>
-                </div>
-                <div style={{ padding: "8px 10px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{u.name} <span style={{ fontSize: 10, color: "#555" }}>{u.age}</span></div>
-                  <div style={{ fontSize: 10, color: "#555", marginTop: 1 }}>{u.region}</div>
-                  <div style={{ display: "flex", gap: 3, marginTop: 5, flexWrap: "wrap" }}>
-                    {u.mp.slice(0, 2).map(i => <span key={i} style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: A+"18", color: A }}>{P()[i]}</span>)}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* 나를 봤을 수도 있는 사람 (블러 프리미엄) */}
-          <div style={{ marginTop: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#555" }}>👁 나를 본 사람</div>
-              <span style={{ fontSize: 10, color: "#555" }}>클릭해서 프로필 보기</span>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {USERS.slice(0, 4).map(u => (
-                <div key={u.id} onClick={() => { setPhotoT(u); setScr(SC.UPROF); }} style={{ flexShrink: 0, textAlign: "center", cursor: "pointer" }}>
-                  <div style={{ width: 48, height: 48, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#fff", margin: "0 auto 4px", filter: "blur(5px)", transition: "filter 0.2s" }}
-                    onMouseEnter={e => e.currentTarget.style.filter = "none"}
-                    onMouseLeave={e => e.currentTarget.style.filter = "blur(5px)"}
-                  >{u.name[0]}</div>
-                  <div style={{ fontSize: 9, color: "#444" }}>?</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 추천 매치 */}
-          <div style={{ marginTop: 24, marginBottom: 24 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 10 }}>✦ 추천 매치</div>
-            {USERS.filter(u => u.pct >= 80).map(u => (
-              <div key={u.id} onClick={() => { setPhotoT(u); setScr(SC.UPROF); }}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 12, background: SL, border: `1px solid ${BD}`, marginBottom: 8, cursor: "pointer" }}>
-                <div style={{ width: 42, height: 42, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff", flexShrink: 0, position: "relative" }}>
-                  {u.name[0]}
-                  {u.on && <div style={{ position: "absolute", bottom: 0, right: 0, width: 10, height: 10, borderRadius: "50%", background: "#4ade80", border: "2px solid #1c1c2e" }} />}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{u.name} <span style={{ fontSize: 10, color: "#555" }}>{u.age} {u.g}</span></div>
-                  <div style={{ fontSize: 11, color: "#777", marginTop: 2 }}>{u.bio}</div>
-                </div>
-                <div style={{ fontSize: 15, fontWeight: 900, color: mc(u.pct) }}>{u.pct}%</div>
-              </div>
-            ))}
           </div>
         </div>
 
-        {/* 우: 채팅 */}
-        <div style={{ ...panelStyle, width: 340, flexShrink: 0, borderRight: "none", display: "flex", flexDirection: "column" }}>
+        {/* 우: 채팅 340px */}
+        <div style={{ width: 340, flexShrink: 0, height: "100vh", display: "flex", flexDirection: "column", borderLeft: `1px solid ${BD}` }}>
           {!chatU ? (
-            <div style={{ padding: "20px 20px" }}>
+            <div style={{ padding: "20px 20px", overflowY: "auto" }}>
               <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 14px" }}>{t("chat")}</h2>
-              {matches.filter(u => u.lm).map(u => (
-                <div key={u.id} onClick={() => { setChatU(u); setMsgs(u.lm ? [{ id: 1, from: "them", text: u.lm, time: "now" }] : []); }}
+              {matches.map(u => (
+                <div key={u.id} onClick={() => { setChatU(u); setMsgs([]); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${BD}`, cursor: "pointer" }}>
                   <div style={{ width: 40, height: 40, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0, position: "relative" }}>
                     {u.name[0]}
-                    {u.on && <div style={{ position: "absolute", bottom: 0, right: 0, width: 10, height: 10, borderRadius: "50%", background: "#4ade80", border: "2px solid #07070b" }} />}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontWeight: 700, fontSize: 13 }}>{u.name} {u.badge && <span style={{ color: "#4ade80", fontSize: 10 }}>✓</span>}</span>
-                      <span style={{ fontSize: 10, color: "#444" }}>{u.la}</span>
+                      <span style={{ fontWeight: 700, fontSize: 13 }}>{u.name} {u.badge && <span style={{ fontSize: 10 }}>⭐</span>}</span>
                     </div>
-                    <div style={{ fontSize: 11, color: "#555", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.lm}</div>
+                    <div style={{ fontSize: 11, color: "#555", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.lm || "👋 새 매치 · 대화를 시작해보세요"}</div>
                   </div>
                 </div>
               ))}
-              {matches.filter(u => u.lm).length === 0 && (
-                <div style={{ textAlign: "center", color: "#444", fontSize: 13, marginTop: 40 }}>아직 채팅이 없어요</div>
+              {matches.length === 0 && (
+                <div style={{ textAlign: "center", color: "#444", fontSize: 13, marginTop: 40 }}>아직 매치가 없어요 · 스와이프해서 좋아요를 눌러보세요 ✨</div>
               )}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-              <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${BD}`, background: "#0a0a10" }}>
-                <button onClick={() => setChatU(null)} style={{ background: "none", border: "none", color: "#666", fontSize: 18, cursor: "pointer" }}>←</button>
+              <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${BD}`, background: SF }}>
+                <button onClick={() => setChatU(null)} style={{ background: "none", border: "none", color: "#666", fontSize: 18, cursor: "pointer" }}>‹</button>
                 <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg,${A},${AD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#fff" }}>{chatU.name[0]}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{chatU.name}</div>
@@ -1503,7 +1793,7 @@ export default function App() {
                 <div style={{ textAlign: "center", padding: "4px 12px", borderRadius: 8, background: SF, color: "#444", fontSize: 10, alignSelf: "center", marginBottom: 4 }}>MyPiece Match · {chatU.pct}%</div>
                 {msgs.map(msg => (
                   <div key={msg.id} style={{ alignSelf: msg.from === "me" ? "flex-end" : "flex-start", maxWidth: "78%" }}>
-                    <div style={{ padding: "9px 14px", borderRadius: 18, background: msg.from === "me" ? `linear-gradient(135deg,${A},${AD})` : SL, color: "#fff", fontSize: 13, lineHeight: 1.5, borderBottomRightRadius: msg.from === "me" ? 4 : 18, borderBottomLeftRadius: msg.from === "me" ? 18 : 4 }}>{msg.text}</div>
+                    <div style={{ padding: "9px 14px", borderRadius: 18, background: msg.from === "me" ? `linear-gradient(135deg,${A},${AD})` : SL, color: msg.from === "me" ? "#fff" : "#1a1a1a", fontSize: 13, lineHeight: 1.5, borderBottomRightRadius: msg.from === "me" ? 4 : 18, borderBottomLeftRadius: msg.from === "me" ? 18 : 4 }}>{msg.text}</div>
                     <div style={{ fontSize: 9, color: "#333", marginTop: 1, textAlign: msg.from === "me" ? "right" : "left" }}>{msg.time}</div>
                   </div>
                 ))}
@@ -1516,10 +1806,10 @@ export default function App() {
                 )}
                 <div ref={chatEnd} />
               </div>
-              <div style={{ padding: "8px 12px", display: "flex", gap: 6, alignItems: "center", borderTop: `1px solid ${BD}`, background: "#0a0a10" }}>
-                <input style={{ flex: 1, padding: "10px 16px", borderRadius: 20, background: SF, border: `1px solid ${BD}`, color: "#eee", fontSize: 13, outline: "none" }}
+              <div style={{ padding: "8px 12px", display: "flex", gap: 6, alignItems: "center", borderTop: `1px solid ${BD}`, background: SF }}>
+                <input style={{ flex: 1, padding: "10px 16px", borderRadius: 20, background: "#0d0d0d", border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 13, outline: "none" }}
                   placeholder={t("msgPh")} value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} />
-                <button onClick={sendMsg} style={{ width: 38, height: 38, borderRadius: "50%", background: inp.trim() ? `linear-gradient(135deg,${A},${AD})` : SL, border: "none", color: "#fff", fontSize: 17, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>↑</button>
+                <button onClick={sendMsg} style={{ width: 38, height: 38, borderRadius: "50%", background: inp.trim() ? `linear-gradient(135deg,${A},${AD})` : SL, border: "none", color: "#fff", fontSize: 17, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>🚀</button>
               </div>
             </div>
           )}
@@ -1536,6 +1826,7 @@ export default function App() {
       <div style={{ ...base, paddingBottom: 72 }}>
         <Head><title>MyPiece - Discover</title></Head>
         <Toast />
+        <MatchModal />
         <div style={{ padding: "16px 24px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{
             fontSize: 24, fontWeight: 900,
@@ -1544,15 +1835,15 @@ export default function App() {
           }}>MyPiece</span>
           <button onClick={() => setShowGF(!showGF)} style={{
             padding: "6px 14px", borderRadius: 20, background: SL,
-            border: `1px solid ${BD}`, color: "#aaa", fontSize: 12, cursor: "pointer"
+            border: `1px solid ${BD}`, color: "#666", fontSize: 12, cursor: "pointer"
           }}>
-            {gFilter === "all" ? "👥" : gFilter === "F" ? "♀" : "♂"} Filter
+            {gFilter === "all" ? "🫂" : gFilter === "F" ? "👩" : "👨"} Filter
           </button>
         </div>
 
         {showGF && (
           <div style={{ margin: "0 24px 12px", padding: "12px 16px", borderRadius: 14, background: SL, border: `1px solid ${BD}`, display: "flex", gap: 8 }}>
-            {[{ v: "all", l: "All" }, { v: "F", l: "♀ Female" }, { v: "M", l: "♂ Male" }].map(o => (
+            {[{ v: "all", l: "All" }, { v: "F", l: "👩 Female" }, { v: "M", l: "👨 Male" }].map(o => (
               <button key={o.v} onClick={() => { setGFilter(o.v); setShowGF(false); setSwpI(0); }}
                 style={{
                   flex: 1, padding: "10px 0", borderRadius: 10,
@@ -1565,21 +1856,27 @@ export default function App() {
         )}
 
         <div style={{ padding: "0 24px" }}>
-          <div style={{ fontSize: 12, color: "#555", textAlign: "center", marginBottom: 12 }}>{t("swipeHint")}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: "#888" }}>{t("swipeHint")}</div>
+            <div style={{ fontSize: 11, color: A, fontWeight: 700, background: A+"15", padding: "3px 10px", borderRadius: 10 }}>
+              {pool.length} nearby
+            </div>
+          </div>
           {m && (
             <div style={{
               background: `linear-gradient(160deg,${SF},${SL})`,
               borderRadius: 24, border: `1px solid ${BD}`, overflow: "hidden"
             }}>
               <div style={{
-                height: 200, background: `linear-gradient(135deg,${A}20,${AD}20)`,
+                height: 260, background: `linear-gradient(160deg,${A}15,${AD}30)`,
                 display: "flex", alignItems: "center", justifyContent: "center", position: "relative"
               }}>
                 <div style={{
-                  width: 90, height: 90, borderRadius: "50%",
+                  width: 110, height: 110, borderRadius: "50%",
                   background: `linear-gradient(135deg,${A},${AD})`,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 36, fontWeight: 700, color: "#fff"
+                  fontSize: 44, fontWeight: 700, color: "#fff",
+                  boxShadow: `0 8px 32px ${A}44`
                 }}>{m.name[0]}</div>
                 {m.on && (
                   <div style={{
@@ -1593,7 +1890,7 @@ export default function App() {
                 </div>
                 <div style={{
                   position: "absolute", bottom: 16, right: 16,
-                  background: "#000a", borderRadius: 10, padding: "4px 12px"
+                  background: "rgba(0,0,0,0.55)", borderRadius: 10, padding: "4px 12px"
                 }}>
                   <span style={{ fontSize: 18, fontWeight: 900, color: mc(m.pct) }}>{m.pct}%</span>
                 </div>
@@ -1608,36 +1905,33 @@ export default function App() {
                 <p style={{ fontSize: 13, color: "#999", margin: "10px 0", lineHeight: 1.5 }}>{m.bio}</p>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
                   {m.mp.map(i => (
-                    <span key={"m"+i} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, background: A+"18", color: A }}>✦ {P()[i]}</span>
+                    <span key={"m"+i} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, background: A+"18", color: A }}>✨ {P()[i]}</span>
                   ))}
                   {m.ip.map(i => (
-                    <span key={"i"+i} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, background: AS+"18", color: AS }}>♡ {P()[i]}</span>
+                    <span key={"i"+i} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, background: AS+"18", color: AS }}>🤍 {P()[i]}</span>
                   ))}
                 </div>
                 <div style={{ display: "flex", gap: 10 }}>
                   <button onClick={() => setSwpI(i => i + 1)} style={{
                     width: 54, height: 54, borderRadius: "50%", background: SL,
-                    border: `2px solid ${BD}`, color: "#666", fontSize: 24,
+                    border: `2px solid ${BD}`, color: "#999", fontSize: 26,
                     cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
-                  }}>✕</button>
-                  <button onClick={() => {
-                    setLiked(p => p.includes(m.id) ? p : [...p, m.id]);
-                    st("♡ " + t("like") + "!");
-                    setSwpI(i => i + 1);
-                  }} style={{
+                  }}>👋</button>
+                  <button onClick={() => { handleLike(m); setSwpI(idx => idx + 1); }} style={{
                     flex: 1, height: 54, borderRadius: 27,
-                    background: `linear-gradient(135deg,${AS},${A})`,
+                    background: liked.includes(m.id) ? `${A}88` : `linear-gradient(135deg,${AS},${A})`,
                     border: "none", color: "#fff", fontSize: 16, fontWeight: 700,
-                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6
+                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    transition: "all 0.2s"
                   }}>
-                    {liked.includes(m.id) ? "♥" : "♡"} {t("like")}
+                    {liked.includes(m.id) ? "❤️ Liked!" : "🤍 " + t("like")}
                   </button>
                   <button onClick={() => openChat(m)} style={{
                     width: 54, height: 54, borderRadius: "50%",
                     background: `linear-gradient(135deg,${A},${AD})`,
                     border: "none", color: "#fff", fontSize: 22,
                     cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
-                  }}>💬</button>
+                  }}>💌</button>
                 </div>
               </div>
             </div>
@@ -1646,7 +1940,7 @@ export default function App() {
 
         <div style={{ padding: "20px 24px" }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: "#555" }}>{t("chat")}</h3>
-          {matches.filter(u => u.lm).slice(0, 4).map(u => (
+          {matches.slice(0, 4).map(u => (
             <div key={u.id} onClick={() => openChat(u)} style={{
               display: "flex", alignItems: "center", gap: 12,
               padding: "10px 0", borderBottom: `1px solid ${BD}`, cursor: "pointer"
@@ -1658,25 +1952,20 @@ export default function App() {
                 fontSize: 16, fontWeight: 700, color: "#fff", position: "relative", flexShrink: 0
               }}>
                 {u.name[0]}
-                {u.on && (
-                  <div style={{
-                    position: "absolute", bottom: 0, right: 0,
-                    width: 11, height: 11, borderRadius: "50%",
-                    background: "#4ade80", border: "2px solid #07070b"
-                  }} />
-                )}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ fontWeight: 700, fontSize: 14 }}>
-                    {u.name} {u.badge && <span style={{ color: "#4ade80", fontSize: 10 }}>✓</span>}
+                    {u.name} {u.badge && <span style={{ fontSize: 10 }}>⭐</span>}
                   </span>
-                  <span style={{ fontSize: 11, color: "#444" }}>{u.la}</span>
                 </div>
-                <div style={{ fontSize: 12, color: "#555", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.lm}</div>
+                <div style={{ fontSize: 12, color: "#555", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.lm || "👋 새 매치 · 대화를 시작해보세요"}</div>
               </div>
             </div>
           ))}
+          {matches.length === 0 && (
+            <div style={{ textAlign: "center", color: "#888", fontSize: 13, padding: "20px 0" }}>아직 매치가 없어요 ✨</div>
+          )}
         </div>
         <Nav />
       </div>
@@ -1690,9 +1979,9 @@ export default function App() {
       <Toast />
       <div style={{
         padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
-        borderBottom: `1px solid ${BD}`, background: "#0a0a10"
+        borderBottom: `1px solid ${BD}`, background: SF
       }}>
-        <button onClick={back} style={{ background: "none", border: "none", color: "#666", fontSize: 22, cursor: "pointer" }}>←</button>
+        <button onClick={back} style={{ background: "none", border: "none", color: "#666", fontSize: 22, cursor: "pointer" }}>‹</button>
         <div onClick={() => { setPhotoT(chatU); go(SC.UPROF); }}
           style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, cursor: "pointer" }}>
           <div style={{
@@ -1703,7 +1992,7 @@ export default function App() {
           }}>{chatU.name[0]}</div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>
-              {chatU.name} {chatU.badge && <span style={{ color: "#4ade80", fontSize: 10 }}>✓</span>}
+              {chatU.name} {chatU.badge && <span style={{ fontSize: 10 }}>⭐</span>}
             </div>
             <div style={{ fontSize: 10, color: chatU.on ? "#4ade80" : "#555" }}>
               {chatU.on ? t("online") : t("offline")}
@@ -1726,7 +2015,7 @@ export default function App() {
             <div style={{
               padding: "10px 16px", borderRadius: 20,
               background: msg.from === "me" ? `linear-gradient(135deg,${A},${AD})` : SL,
-              color: "#fff", fontSize: 14, lineHeight: 1.5,
+              color: msg.from === "me" ? "#fff" : "#1a1a1a", fontSize: 14, lineHeight: 1.5,
               borderBottomRightRadius: msg.from === "me" ? 6 : 20,
               borderBottomLeftRadius: msg.from === "me" ? 20 : 6
             }}>{msg.text}</div>
@@ -1746,9 +2035,9 @@ export default function App() {
         <div ref={chatEnd} />
       </div>
 
-      <div style={{ padding: "10px 14px", display: "flex", gap: 8, alignItems: "center", borderTop: `1px solid ${BD}`, background: "#0a0a10" }}>
+      <div style={{ padding: "10px 14px", display: "flex", gap: 8, alignItems: "center", borderTop: `1px solid ${BD}`, background: SF }}>
         <input
-          style={{ flex: 1, padding: "12px 18px", borderRadius: 24, background: SF, border: `1px solid ${BD}`, color: "#eee", fontSize: 14, outline: "none" }}
+          style={{ flex: 1, padding: "12px 18px", borderRadius: 24, background: "#0d0d0d", border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 14, outline: "none" }}
           placeholder={t("msgPh")}
           value={inp}
           onChange={e => setInp(e.target.value)}
@@ -1759,7 +2048,7 @@ export default function App() {
           background: inp.trim() ? `linear-gradient(135deg,${A},${AD})` : SL,
           border: "none", color: "#fff", fontSize: 20,
           cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-        }}>↑</button>
+        }}>🚀</button>
       </div>
     </div>
   );
@@ -1784,12 +2073,12 @@ export default function App() {
               }}>
                 <div style={{
                   width: 48, height: 48, borderRadius: "50%",
-                  background: u.v ? `linear-gradient(135deg,${A},${AD})` : "#2a2a3a",
+                  background: u.v ? `linear-gradient(135deg,${A},${AD})` : "#e8d8d0",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 20, fontWeight: 700, color: "#fff"
                 }}>{u.name[0]}</div>
                 {u.on && <div style={{ position: "absolute", top: 8, right: 8, width: 9, height: 9, borderRadius: "50%", background: "#4ade80" }} />}
-                {u.badge && <div style={{ position: "absolute", top: 8, left: 8, fontSize: 9, color: "#4ade80", background: "#4ade8018", padding: "2px 6px", borderRadius: 6 }}>✓</div>}
+                {u.badge && <div style={{ position: "absolute", top: 8, left: 8, fontSize: 10, background: "#ffffff99", padding: "2px 6px", borderRadius: 6 }}>⭐</div>}
                 <div style={{ position: "absolute", bottom: 8, right: 8, fontSize: 12, fontWeight: 800, color: mc(u.pct) }}>{u.pct}%</div>
               </div>
               <div style={{ padding: "10px 12px" }}>
@@ -1815,7 +2104,7 @@ export default function App() {
     return (
       <div style={{ ...base, padding: "56px 28px" }}>
         <button onClick={back} style={{ background: "none", border: "none", color: "#666", fontSize: 14, cursor: "pointer", marginBottom: 20 }}>
-          ← {t("back")}
+          ‹ Back
         </button>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{
@@ -1829,29 +2118,29 @@ export default function App() {
           </h2>
           <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>{u.region} · {u.on ? t("online") : u.la}</div>
           <div style={{ marginTop: 8 }}><Badge has={u.badge} size={14} /></div>
-          {u.v && <div style={{ fontSize: 12, color: A, marginTop: 4 }}>✓ {P()[u.vp]} {t("verified")}</div>}
+          {u.v && <div style={{ fontSize: 12, color: A, marginTop: 4 }}>⭐ {P()[u.vp]} {t("verified")}</div>}
         </div>
         <div style={{ background: SL, borderRadius: 14, padding: 16, marginBottom: 12, border: `1px solid ${BD}` }}>
-          <div style={{ fontSize: 14, color: "#bbb", lineHeight: 1.6 }}>{u.bio}</div>
+          <div style={{ fontSize: 14, color: "#555", lineHeight: 1.6 }}>{u.bio}</div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
           <div style={{ flex: 1, background: SF, borderRadius: 14, padding: 12 }}>
-            <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>✦ {t("myPiece")}</div>
+            <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>✨ {t("myPiece")}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {u.mp.map(i => <span key={i} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 8, background: A+"18", color: A }}>{P()[i]}</span>)}
             </div>
           </div>
           <div style={{ flex: 1, background: SF, borderRadius: 14, padding: 12 }}>
-            <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>♡ {t("intPiece")}</div>
+            <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>🤍 {t("intPiece")}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {u.ip.map(i => <span key={i} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 8, background: AS+"18", color: AS }}>{P()[i]}</span>)}
             </div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button onClick={() => { setLiked(p => p.includes(u.id) ? p : [...p, u.id]); st(t("like") + "!"); }}
+          <button onClick={() => handleLike(u)}
             style={{ flex: 1, padding: "14px 0", borderRadius: 14, background: AS+"15", border: `1px solid ${AS}33`, color: AS, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-            {liked.includes(u.id) ? "♥" : "♡"} {t("like")}
+            {liked.includes(u.id) ? "❤️" : "🤍"} {t("like")}
           </button>
           <button onClick={() => openChat(u)}
             style={{ flex: 1, padding: "14px 0", borderRadius: 14, background: `linear-gradient(135deg,${A},${AD})`, border: "none", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
@@ -1875,10 +2164,10 @@ export default function App() {
   // ═══ 신고 ═══
   if (scr === SC.REPORT) return (
     <div style={{ ...base, padding: "56px 28px" }}>
-      <button onClick={back} style={{ background: "none", border: "none", color: "#666", fontSize: 14, cursor: "pointer", marginBottom: 20 }}>← {t("back")}</button>
+      <button onClick={back} style={{ background: "none", border: "none", color: "#666", fontSize: 14, cursor: "pointer", marginBottom: 20 }}>‹ Back</button>
       {repDone ? (
         <div style={{ textAlign: "center", paddingTop: 40 }}>
-          <div style={{ fontSize: 52, marginBottom: 16 }}>✓</div>
+          <div style={{ fontSize: 52, marginBottom: 16 }}>🎉</div>
           <h2 style={{ fontSize: 20, fontWeight: 800 }}>{t("reported")}</h2>
           <button onClick={back} style={{ ...btnStyle(true), marginTop: 24 }}>{t("back")}</button>
         </div>
@@ -1889,7 +2178,7 @@ export default function App() {
             <button key={r} onClick={() => setRepR(r)} style={{
               width: "100%", padding: "14px 16px", borderRadius: 12, marginBottom: 8, textAlign: "left",
               background: repR === r ? A+"15" : SL, border: `1px solid ${repR === r ? A : BD}`,
-              color: repR === r ? A : "#bbb", fontSize: 14, cursor: "pointer"
+              color: repR === r ? A : "#555", fontSize: 14, cursor: "pointer"
             }}>{r}</button>
           ))}
           <button style={btnStyle(!!repR)} onClick={() => repR && handleReport()}>{t("report")}</button>
@@ -1901,22 +2190,22 @@ export default function App() {
   // ═══ 설정 ═══
   if (scr === SC.SETTINGS) return (
     <div style={{ ...base, padding: "56px 28px", paddingBottom: 80 }}>
-      <button onClick={back} style={{ background: "none", border: "none", color: "#666", fontSize: 14, cursor: "pointer", marginBottom: 20 }}>← {t("back")}</button>
+      <button onClick={back} style={{ background: "none", border: "none", color: "#666", fontSize: 14, cursor: "pointer", marginBottom: 20 }}>‹ Back</button>
       <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 24 }}>{t("settings")}</h2>
 
       {/* 알림 */}
       <div style={{ background: SF, borderRadius: 16, padding: "4px 0", marginBottom: 12 }}>
         <div style={{ padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${BD}` }}>
-          <span style={{ fontSize: 14, color: "#bbb" }}>🔔 알림</span>
+          <span style={{ fontSize: 14, color: "#555" }}>🔔 알림</span>
           <div onClick={() => setNotifOn(v => !v)} style={{
-            width: 44, height: 24, borderRadius: 12, background: notifOn ? A : "#333",
+            width: 44, height: 24, borderRadius: 12, background: notifOn ? A : "#cccccc",
             position: "relative", cursor: "pointer", transition: "background 0.2s"
           }}>
             <div style={{ position: "absolute", top: 2, left: notifOn ? 22 : 2, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
           </div>
         </div>
         <div style={{ padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 14, color: "#bbb" }}>🚫 차단 목록 ({blocked.length}명)</span>
+          <span style={{ fontSize: 14, color: "#555" }}>🚫 차단 목록 ({blocked.length}명)</span>
           {blocked.length > 0 && (
             <button onClick={() => { setBlocked([]); if (authUser) set(ref(db, `${DB_USERS}/${authUser.uid}/blocked`), []); st("차단 목록 초기화"); }}
               style={{ fontSize: 12, color: "#ef4444", background: "none", border: "none", cursor: "pointer" }}>전체 해제</button>
@@ -1936,7 +2225,7 @@ export default function App() {
               cursor: "pointer", display: "flex", alignItems: "center", gap: 8
             }}>
               <span style={{ fontSize: 18 }}>{l.flag}</span>
-              <span style={{ fontSize: 13, color: lang === l.code ? A : "#bbb" }}>{l.name}</span>
+              <span style={{ fontSize: 13, color: lang === l.code ? A : "#555" }}>{l.name}</span>
             </button>
           ))}
         </div>
@@ -1946,7 +2235,7 @@ export default function App() {
       <div style={{ background: SF, borderRadius: 16, padding: "4px 0" }}>
         <div style={{ padding: "14px 20px", borderBottom: `1px solid ${BD}` }}>
           <span style={{ fontSize: 13, color: "#555" }}>이메일</span>
-          <div style={{ fontSize: 14, color: "#bbb", marginTop: 2 }}>{authUser?.email || "-"}</div>
+          <div style={{ fontSize: 14, color: "#555", marginTop: 2 }}>{authUser?.email || "-"}</div>
         </div>
         <div onClick={() => { if (confirm("정말 탈퇴하시겠어요?")) handleLogout(); }}
           style={{ padding: "14px 20px", cursor: "pointer" }}>
@@ -1971,7 +2260,7 @@ export default function App() {
             fontSize: 32, fontWeight: 700, color: "#fff"
           }}>{user?.nickname?.[0] || "?"}</div>
           <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>{user?.nickname || "User"}</h2>
-          {user?.verified && <div style={{ fontSize: 12, color: A, marginTop: 4 }}>✓ {(user.vParts || []).map(i => P()[i]).join(", ")} {t("verified")}</div>}
+          {user?.verified && <div style={{ fontSize: 12, color: A, marginTop: 4 }}>⭐ {(user.vParts || []).map(i => P()[i]).join(", ")} {t("verified")}</div>}
         </div>
         <button onClick={() => { setEditMode(true); setEditNick(user?.nickname || ""); setEditMyP(user?.myPieces || []); setEditIntP(user?.intPieces || []); }}
           style={{ position: "absolute", right: 28, top: 60, background: SL, border: `1px solid ${BD}`, borderRadius: 10, padding: "6px 14px", color: "#888", fontSize: 13, cursor: "pointer" }}>
@@ -1984,14 +2273,14 @@ export default function App() {
           <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>닉네임</div>
           <input style={{ ...iB, marginBottom: 16 }} value={editNick} onChange={e => setEditNick(e.target.value)} maxLength={10} placeholder="닉네임 (2~10자)" />
 
-          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>✦ 자신있는 피스 (최대 3개)</div>
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>✨ 자신있는 피스 (최대 3개)</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
             {P().map((p, i) => (
               <button key={i} style={chip(editMyP.includes(i), A)} onClick={() => setEditMyP(prev => prev.includes(i) ? prev.filter(x => x !== i) : prev.length < 3 ? [...prev, i] : prev)}>{p}</button>
             ))}
           </div>
 
-          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>♡ 관심있는 피스 (최대 3개)</div>
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>🤍 관심있는 피스 (최대 3개)</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
             {P().map((p, i) => (
               <button key={i} style={chip(editIntP.includes(i), AS)} onClick={() => setEditIntP(prev => prev.includes(i) ? prev.filter(x => x !== i) : prev.length < 3 ? [...prev, i] : prev)}>{p}</button>
@@ -2007,13 +2296,13 @@ export default function App() {
         <>
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <div style={{ flex: 1, background: SF, borderRadius: 14, padding: 12 }}>
-              <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>✦ {t("myPiece")}</div>
+              <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>✨ {t("myPiece")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                 {user?.myPieces?.map(i => <span key={i} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 8, background: A+"18", color: A }}>{P()[i]}</span>)}
               </div>
             </div>
             <div style={{ flex: 1, background: SF, borderRadius: 14, padding: 12 }}>
-              <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>♡ {t("intPiece")}</div>
+              <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>🤍 {t("intPiece")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                 {user?.intPieces?.map(i => <span key={i} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 8, background: AS+"18", color: AS }}>{P()[i]}</span>)}
               </div>
@@ -2042,7 +2331,7 @@ export default function App() {
           <div key={i} onClick={item.a} style={{
             padding: "15px 20px", display: "flex", justifyContent: "space-between",
             borderBottom: i < arr.length - 1 ? `1px solid ${BD}` : "none",
-            cursor: "pointer", color: item.l === t("logout") ? A : "#bbb"
+            cursor: "pointer", color: item.l === t("logout") ? A : "#333"
           }}>
             <span style={{ fontSize: 14 }}>{item.l}</span>
             <span style={{ color: "#333" }}>›</span>

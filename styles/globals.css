@@ -5,8 +5,8 @@
 }
 
 html, body {
-  background: #07070b;
-  color: #eee;
+  background: #0d0d0d;
+  color: #1a1a1a;
   font-family: 'Noto Sans KR', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -35,6 +35,6 @@ input, textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1c1c2e;
+  background: #FF9B7A;
   border-radius: 2px;
 }
