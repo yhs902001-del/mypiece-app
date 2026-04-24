@@ -57,9 +57,9 @@ const CONTENT = {
       {
         h: "6. 민감정보 및 사진 처리",
         b: [
-          "MyPiece는 매칭을 위해 신체 부위가 포함된 사진을 수집할 수 있습니다. 해당 사진은 AI 검열 시스템(또는 수동 검수)을 통해 부적절 콘텐츠 여부를 확인한 뒤 저장됩니다.",
+          "MyPiece는 이용자가 자신 있는 매력 포인트(손, 어깨, 쇄골 등)를 보여주기 위해 업로드한 사진을 수집합니다. 모든 업로드 이미지는 자동 이미지 필터링 시스템과 운영자 검수를 거쳐 저장되며, 부적절한 이미지는 저장되지 않고 즉시 삭제됩니다.",
           "본 서비스는 만 19세 이상만 이용할 수 있으며, 미성년자의 가입은 금지됩니다.",
-          "얼굴, 나체, 성적 노출이 포함된 사진 업로드는 금지되며 발견 시 즉시 삭제·계정 정지 조치합니다.",
+          "얼굴 식별 정보, 나체, 성적 노출이 포함된 이미지는 업로드가 제한되며, 발견 시 즉시 삭제·계정 정지 조치합니다.",
         ],
       },
       {
@@ -156,9 +156,9 @@ const CONTENT = {
       {
         h: "6. Sensitive Information and Photo Handling",
         b: [
-          "MyPiece may collect photos including body parts for matching. These photos are reviewed for inappropriate content by AI moderation (or manual review) before storage.",
+          "MyPiece collects photos users upload to express their charm points (hands, shoulders, collarbone, etc.). All uploaded images pass through automated image filtering and operator review before storage; inappropriate images are deleted and not stored.",
           "This service is restricted to users aged 19 or older.",
-          "Uploading faces, nudity, or sexually explicit images is prohibited and will result in immediate removal and account suspension.",
+          "Uploading facial identity data, nudity, or sexually explicit images is restricted and will result in immediate removal and account suspension.",
         ],
       },
       {

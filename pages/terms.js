@@ -54,7 +54,7 @@ const CONTENT = {
       {
         h: "제6조 (콘텐츠 모니터링 및 신고)",
         b: [
-          "회사는 서비스 내 업로드된 사진·메시지에 대해 AI 검열 또는 수동 검수를 진행할 수 있습니다.",
+          "회사는 서비스 내 업로드된 이미지·메시지에 대해 자동 이미지 필터링 및 운영자 검수를 진행하며, 이용자 신고 기반 사후 조치도 병행합니다.",
           "부적절한 콘텐츠 또는 금지행위를 발견한 이용자는 신고 기능을 통해 즉시 신고할 수 있으며, 회사는 접수된 신고를 합리적인 기간 내에 검토합니다.",
           "신고가 사실로 확인될 경우 경고, 기능 제한, 계정 정지, 계정 삭제 등의 조치를 취할 수 있습니다.",
         ],
@@ -158,7 +158,7 @@ const CONTENT = {
       {
         h: "Article 6. Content Moderation and Reporting",
         b: [
-          "We may moderate uploaded photos and messages via AI or manual review.",
+          "Uploaded images and messages are subject to automated image filtering and operator review, supplemented by user-report-based post-moderation.",
           "Users can report inappropriate content or prohibited conduct. We will review reports within a reasonable period.",
           "Verified violations may result in warnings, feature restrictions, suspension, or account deletion.",
         ],
