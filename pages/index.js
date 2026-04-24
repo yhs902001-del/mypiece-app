@@ -1059,13 +1059,13 @@ export default function App() {
   const SF = "#faf6f3", SL = "#fff3ee", BD = "#e8d5c8";
   const base = {
     minHeight: "100vh",
-    background: "#0d0d0d",
+    background: "linear-gradient(180deg, #fff8f3 0%, #ffffff 520px)",
     fontFamily: "'Noto Sans KR', system-ui, sans-serif",
     color: "#1a1a1a",
     maxWidth: 480,
     margin: "0 auto",
     position: "relative",
-    boxShadow: "0 0 60px rgba(0,0,0,0.4)"
+    boxShadow: "0 0 60px rgba(232, 145, 106, 0.18)"
   };
   const btnStyle = (on) => ({
     width: "100%", padding: "15px 0", border: "none", borderRadius: 14,
@@ -1185,20 +1185,18 @@ export default function App() {
         @keyframes pulse{0%,100%{opacity:0.85}50%{opacity:1}}
       `}</style>
 
-      {/* 배경 글로우 */}
-      <div style={{ position:"absolute", width:520, height:520, borderRadius:"50%", background:`radial-gradient(circle, ${A}22 0%, transparent 68%)`, top:"0%", left:"50%", transform:"translateX(-50%)", pointerEvents:"none" }} />
-      {/* 미술관 조명 빔 */}
-      <div style={{ position:"absolute", width:2, height:"70%", top:"-10%", left:"30%", background:"linear-gradient(180deg, rgba(255,230,200,0.18), transparent)", transform:"rotate(8deg)", pointerEvents:"none", filter:"blur(2px)" }} />
+      {/* 따뜻한 배경 글로우 */}
+      <div style={{ position:"absolute", width:560, height:560, borderRadius:"50%", background:`radial-gradient(circle, ${AS}26 0%, ${A}10 40%, transparent 70%)`, top:"5%", left:"50%", transform:"translateX(-50%)", pointerEvents:"none" }} />
 
-      {/* 세 개의 조각상 — 클래식 대리석 스튜디오 포토 */}
+      {/* 세 개의 조각상 — 크림 갤러리 프레임 */}
       <div style={{ display:"flex", alignItems:"flex-end", gap:12, marginBottom:40, animation:"fadeUp 1s ease both" }}>
 
         {/* ───── 1. 상반신 토르소 — 목·쇄골·가슴 ───── */}
         <div style={{ transform:"rotate(-4deg) translateY(14px)", position:"relative" }}>
           <div style={{
             width:96, height:140, borderRadius:12, overflow:"hidden",
-            boxShadow:`0 14px 44px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08), inset 0 1px 0 rgba(255,255,255,0.08)`,
-            background:"#0f0805"
+            boxShadow:`0 16px 34px rgba(200, 130, 90, 0.28), 0 0 0 1px rgba(232, 145, 106, 0.18), inset 0 1px 0 rgba(255,255,255,0.7)`,
+            background:"#faf3ec"
           }}>
             <svg width="96" height="140" viewBox="0 0 96 140" fill="none" style={{ display:"block" }}>
               <defs>
@@ -1230,10 +1228,11 @@ export default function App() {
                   <stop stopColor="rgba(0,0,0,0)"/>
                   <stop offset="1" stopColor="rgba(0,0,0,0.72)"/>
                 </linearGradient>
-                {/* 스튜디오 배경 비네팅 */}
-                <radialGradient id="bg1" cx="50%" cy="50%" r="72%">
-                  <stop stopColor="#2a1808"/>
-                  <stop offset="1" stopColor="#0a0603"/>
+                {/* 크림 갤러리 배경 */}
+                <radialGradient id="bg1" cx="50%" cy="40%" r="75%">
+                  <stop stopColor="#fff3ea"/>
+                  <stop offset="0.6" stopColor="#f5e3d0"/>
+                  <stop offset="1" stopColor="#ecd4b8"/>
                 </radialGradient>
                 {/* 대리석 질감 */}
                 <filter id="grain1" x="0" y="0" width="100%" height="100%">
@@ -1293,7 +1292,7 @@ export default function App() {
               {/* 바닥 페이드 */}
               <rect width="96" height="140" fill="url(#fade1)"/>
             </svg>
-            <div style={{ position:"absolute", inset:0, borderRadius:12, boxShadow:"inset 0 0 36px rgba(0,0,0,0.65), inset 0 0 8px rgba(0,0,0,0.4)", pointerEvents:"none" }}/>
+            <div style={{ position:"absolute", inset:0, borderRadius:12, boxShadow:"inset 0 0 24px rgba(200, 130, 90, 0.22), inset 0 0 4px rgba(232, 145, 106, 0.12)", pointerEvents:"none" }}/>
           </div>
         </div>
 
@@ -1301,8 +1300,8 @@ export default function App() {
         <div style={{ transform:"translateY(-6px) scale(1.04)", position:"relative" }}>
           <div style={{
             width:82, height:200, borderRadius:14, overflow:"hidden",
-            boxShadow:`0 18px 56px rgba(0,0,0,0.78), 0 0 0 1px rgba(255,255,255,0.1), inset 0 1px 0 rgba(255,255,255,0.08)`,
-            background:"#0d0803", clipPath:"polygon(0 0, 100% 0, 85% 100%, 0 100%)"
+            boxShadow:`0 22px 42px rgba(200, 130, 90, 0.32), 0 0 0 1px rgba(232, 145, 106, 0.22), inset 0 1px 0 rgba(255,255,255,0.7)`,
+            background:"#f8efe3", clipPath:"polygon(0 0, 100% 0, 85% 100%, 0 100%)"
           }}>
             <svg width="82" height="200" viewBox="0 0 82 200" fill="none" style={{ display:"block" }}>
               <defs>
@@ -1329,9 +1328,10 @@ export default function App() {
                   <stop stopColor="rgba(0,0,0,0)"/>
                   <stop offset="1" stopColor="rgba(0,0,0,0.78)"/>
                 </linearGradient>
-                <radialGradient id="bg2" cx="50%" cy="50%" r="75%">
-                  <stop stopColor="#271608"/>
-                  <stop offset="1" stopColor="#080502"/>
+                <radialGradient id="bg2" cx="50%" cy="35%" r="78%">
+                  <stop stopColor="#fff5ec"/>
+                  <stop offset="0.6" stopColor="#f3e0cc"/>
+                  <stop offset="1" stopColor="#e8ccaf"/>
                 </radialGradient>
                 <filter id="grain2" x="0" y="0" width="100%" height="100%">
                   <feTurbulence type="fractalNoise" baseFrequency="1.7" numOctaves="2" seed="7"/>
@@ -1395,7 +1395,7 @@ export default function App() {
 
               <rect width="82" height="200" fill="url(#fade2)"/>
             </svg>
-            <div style={{ position:"absolute", inset:0, boxShadow:"inset 0 0 40px rgba(0,0,0,0.7), inset 0 0 10px rgba(0,0,0,0.45)", pointerEvents:"none" }}/>
+            <div style={{ position:"absolute", inset:0, boxShadow:"inset 0 0 28px rgba(200, 130, 90, 0.28), inset 0 0 5px rgba(232, 145, 106, 0.15)", pointerEvents:"none" }}/>
           </div>
         </div>
 
@@ -1403,8 +1403,8 @@ export default function App() {
         <div style={{ transform:"rotate(4deg) translateY(10px)", position:"relative" }}>
           <div style={{
             width:96, height:130, borderRadius:12, overflow:"hidden",
-            boxShadow:`0 14px 44px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.07)`,
-            background:"#0f0805"
+            boxShadow:`0 16px 34px rgba(200, 130, 90, 0.28), 0 0 0 1px rgba(232, 145, 106, 0.18), inset 0 1px 0 rgba(255,255,255,0.7)`,
+            background:"#faf3ec"
           }}>
             <svg width="96" height="130" viewBox="0 0 96 130" fill="none" style={{ display:"block" }}>
               <defs>
@@ -1431,9 +1431,10 @@ export default function App() {
                   <stop stopColor="rgba(0,0,0,0)"/>
                   <stop offset="1" stopColor="rgba(0,0,0,0.75)"/>
                 </linearGradient>
-                <radialGradient id="bg3" cx="50%" cy="50%" r="72%">
-                  <stop stopColor="#291708"/>
-                  <stop offset="1" stopColor="#090502"/>
+                <radialGradient id="bg3" cx="50%" cy="40%" r="75%">
+                  <stop stopColor="#fff3e8"/>
+                  <stop offset="0.6" stopColor="#f4e1cd"/>
+                  <stop offset="1" stopColor="#ead0b4"/>
                 </radialGradient>
                 <filter id="grain3" x="0" y="0" width="100%" height="100%">
                   <feTurbulence type="fractalNoise" baseFrequency="1.9" numOctaves="2" seed="11"/>
@@ -1489,7 +1490,7 @@ export default function App() {
 
               <rect width="96" height="130" fill="url(#fade3)"/>
             </svg>
-            <div style={{ position:"absolute", inset:0, borderRadius:12, boxShadow:"inset 0 0 32px rgba(0,0,0,0.6), inset 0 0 8px rgba(0,0,0,0.4)", pointerEvents:"none" }}/>
+            <div style={{ position:"absolute", inset:0, borderRadius:12, boxShadow:"inset 0 0 22px rgba(200, 130, 90, 0.22), inset 0 0 4px rgba(232, 145, 106, 0.12)", pointerEvents:"none" }}/>
           </div>
         </div>
 
@@ -1503,8 +1504,8 @@ export default function App() {
           WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent",
           animation:"pulse 2.5s ease-in-out infinite"
         }}>MyPiece</div>
-        <div style={{ color:"#999", fontSize:13, marginTop:10, letterSpacing:2, textTransform:"uppercase" }}>Find Your Piece</div>
-        <div style={{ color:"#ccc", fontSize:11, marginTop:6 }}>Beauty is in every detail ✨</div>
+        <div style={{ color:"#666", fontSize:13, marginTop:10, letterSpacing:2, textTransform:"uppercase", fontWeight:600 }}>Find Your Piece</div>
+        <div style={{ color:"#888", fontSize:11, marginTop:6 }}>Beauty is in every detail ✨</div>
       </div>
     </div>
   );
