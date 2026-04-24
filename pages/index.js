@@ -869,24 +869,34 @@ export default function App() {
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       setPhotoURLs(p => ({ ...p, [partIdx]: url }));
-      startScan(partIdx);
+      startScan(partIdx, url);
     } catch (e) {
       st("업로드 실패: " + e.message);
     }
     setUploading(u => ({ ...u, [partIdx]: false }));
   };
 
-  const startScan = (partIdx) => {
+  // 이미지 검열 — /api/moderate-image 호출. VISION_API_KEY 세팅 시 실 Vision 검열, 미설정 시 mock 폴백.
+  const startScan = async (partIdx, imageUrl) => {
     setScans(s => ({ ...s, [partIdx]: "scanning" }));
-    setTimeout(() => {
-      const ok = Math.random() > 0.15;
+    try {
+      const resp = await fetch("/api/moderate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl }),
+      });
+      const data = await resp.json();
       setScans(s => {
-        const next = { ...s, [partIdx]: ok ? "ok" : "fail" };
+        const next = { ...s, [partIdx]: data.ok ? "ok" : "fail" };
         const allOk = vParts.every(p => next[p] === "ok");
         if (allOk && vParts.length >= 2) setVDone(true);
         return next;
       });
-    }, 2500);
+      if (!data.ok && data.reason) st("❌ " + data.reason);
+    } catch (e) {
+      setScans(s => ({ ...s, [partIdx]: "fail" }));
+      st("검증 실패: 네트워크 오류");
+    }
   };
 
   // 프로필 완성 → Firebase 저장
