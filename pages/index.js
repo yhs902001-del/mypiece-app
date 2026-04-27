@@ -1188,17 +1188,23 @@ export default function App() {
       {/* 따뜻한 배경 글로우 */}
       <div style={{ position:"absolute", width:560, height:560, borderRadius:"50%", background:`radial-gradient(circle, ${AS}26 0%, ${A}10 40%, transparent 70%)`, top:"5%", left:"50%", transform:"translateX(-50%)", pointerEvents:"none" }} />
 
-      {/* 세 개의 조각상 — 크림 갤러리 프레임 */}
+      {/* 세 개의 조각상 — 클래식 르네상스 대리석 갤러리 */}
       <div style={{ display:"flex", alignItems:"flex-end", gap:12, marginBottom:40, animation:"fadeUp 1s ease both" }}>
 
-        {/* ───── 1. 상반신 토르소 — 목·쇄골·가슴 ───── */}
+        {/* ───── 1. 상반신 토르소 ───── */}
         <div style={{ transform:"rotate(-4deg) translateY(14px)", position:"relative" }}>
           <div style={{
             width:96, height:140, borderRadius:12, overflow:"hidden",
             boxShadow:`0 16px 34px rgba(200, 130, 90, 0.28), 0 0 0 1px rgba(232, 145, 106, 0.18), inset 0 1px 0 rgba(255,255,255,0.7)`,
             background:"#faf3ec"
           }}>
-            <svg width="96" height="140" viewBox="0 0 96 140" fill="none" style={{ display:"block" }}>
+            <img
+              src="https://images.unsplash.com/photo-1601887389937-0b02c26b602c?w=240&h=350&fit=crop&q=85&auto=format"
+              alt="Classical sculpture"
+              loading="eager"
+              style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", filter:"sepia(0.06) saturate(1.05) contrast(1.02)" }}
+            />
+            <svg width="0" height="0" style={{display:"none"}}>
               <defs>
                 {/* 메인 피부 톤 — 위에서 내려오는 자연광 */}
                 <radialGradient id="sk1" cx="40%" cy="22%" r="75%">
@@ -1303,7 +1309,13 @@ export default function App() {
             boxShadow:`0 22px 42px rgba(200, 130, 90, 0.32), 0 0 0 1px rgba(232, 145, 106, 0.22), inset 0 1px 0 rgba(255,255,255,0.7)`,
             background:"#f8efe3", clipPath:"polygon(0 0, 100% 0, 85% 100%, 0 100%)"
           }}>
-            <svg width="82" height="200" viewBox="0 0 82 200" fill="none" style={{ display:"block" }}>
+            <img
+              src="https://images.unsplash.com/photo-1609856699475-6fc22afa6d31?w=200&h=480&fit=crop&q=85&auto=format"
+              alt="Classical sculpture full body"
+              loading="eager"
+              style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", filter:"sepia(0.06) saturate(1.05) contrast(1.02)" }}
+            />
+            <svg width="0" height="0" style={{display:"none"}}>
               <defs>
                 <radialGradient id="sk2" cx="52%" cy="18%" r="78%">
                   <stop offset="0" stopColor="#FFF2DE"/>
@@ -1406,7 +1418,13 @@ export default function App() {
             boxShadow:`0 16px 34px rgba(200, 130, 90, 0.28), 0 0 0 1px rgba(232, 145, 106, 0.18), inset 0 1px 0 rgba(255,255,255,0.7)`,
             background:"#faf3ec"
           }}>
-            <svg width="96" height="130" viewBox="0 0 96 130" fill="none" style={{ display:"block" }}>
+            <img
+              src="https://images.unsplash.com/photo-1572379371012-9e11bfc61b35?w=240&h=320&fit=crop&q=85&auto=format"
+              alt="Classical sculpture lower torso"
+              loading="eager"
+              style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", filter:"sepia(0.06) saturate(1.05) contrast(1.02)" }}
+            />
+            <svg width="0" height="0" style={{display:"none"}}>
               <defs>
                 <radialGradient id="sk3" cx="42%" cy="22%" r="72%">
                   <stop offset="0" stopColor="#FFF4E2"/>
