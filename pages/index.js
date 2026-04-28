@@ -638,7 +638,7 @@ const profileToCard = (uid, data, myMp = [], myIp = []) => {
   };
 };
 
-const SC = { SPLASH: 0, LANG: 1, AGE: 2, BLOCK: 3, LOGIN: 4, SIGNUP: 5, HOME: 6, CHAT: 7, PROFILE: 8, LOUNGE: 9, REPORT: 10, SETTINGS: 11, UPROF: 12 };
+const SC = { SPLASH: 0, LANG: 1, AGE: 2, BLOCK: 3, LOGIN: 4, SIGNUP: 5, HOME: 6, CHAT: 7, PROFILE: 8, LOUNGE: 9, REPORT: 10, SETTINGS: 11, UPROF: 12, CHATLIST: 13 };
 const DB_USERS = "users";
 const DB_CHATS = "chats";
 const DB_LIKES = "likes";
@@ -1128,13 +1128,13 @@ export default function App() {
       {[
         { i: "✨", l: t("home"), s: SC.HOME },
         { i: "🌟", l: t("lounge"), s: SC.LOUNGE },
-        { i: "💌", l: t("chat"), s: SC.HOME },
+        { i: "💌", l: t("chat"), s: SC.CHATLIST },
         { i: "🌸", l: t("my"), s: SC.PROFILE },
       ].map((tab, i) => (
         <button key={i} onClick={() => go(tab.s)} style={{
           flex: 1, background: "none", border: "none", cursor: "pointer",
           display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-          color: tab.s === scr ? A : "#666", fontSize: 18
+          color: (tab.s === scr || (tab.s === SC.CHATLIST && scr === SC.CHAT)) ? A : "#666", fontSize: 18
         }}>
           <span>{tab.i}</span>
           <span style={{ fontSize: 9, fontWeight: 600 }}>{tab.l}</span>
@@ -1591,7 +1591,7 @@ export default function App() {
   );
 
   // ═══ PC 전체화면 레이아웃 ═══
-  if (isDesktop && user && [SC.HOME, SC.LOUNGE, SC.CHAT].includes(scr)) {
+  if (isDesktop && user && [SC.HOME, SC.LOUNGE, SC.CHAT, SC.CHATLIST].includes(scr)) {
     const pool = filteredUsers.filter(u => !liked.includes(u.id) && (u.mp.some(x => intP.includes(x)) || u.ip.some(x => myP.includes(x))));
     const m = pool[swpI % Math.max(pool.length, 1)];
     return (
@@ -2014,6 +2014,53 @@ export default function App() {
       </div>
     );
   }
+
+  // ═══ 채팅 목록 ═══
+  if (scr === SC.CHATLIST) return (
+    <div style={{ ...base, paddingBottom: 72 }}>
+      <Head><title>MyPiece - Chat</title></Head>
+      <Toast />
+      <div style={{ padding: "20px 24px 12px" }}>
+        <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>💌 {t("chat")}</h2>
+        <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{matches.length}개의 매치</p>
+      </div>
+      <div style={{ padding: "0 24px" }}>
+        {matches.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "60px 0" }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>💌</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#444", marginBottom: 8 }}>아직 매치가 없어요</div>
+            <div style={{ fontSize: 13, color: "#888" }}>홈에서 스와이프하고 서로 좋아요하면 채팅이 열려요 ✨</div>
+          </div>
+        ) : (
+          matches.map(u => (
+            <div key={u.id} onClick={() => openChat(u)} style={{
+              display: "flex", alignItems: "center", gap: 14,
+              padding: "14px 0", borderBottom: `1px solid ${BD}`, cursor: "pointer"
+            }}>
+              <div style={{
+                width: 52, height: 52, borderRadius: "50%",
+                background: `linear-gradient(135deg,${A},${AD})`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 20, fontWeight: 700, color: "#fff", flexShrink: 0
+              }}>{u.name[0]}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontWeight: 700, fontSize: 15 }}>
+                    {u.name}{u.badge && <span style={{ fontSize: 11, marginLeft: 4 }}>⭐</span>}
+                  </span>
+                  <span style={{ fontSize: 11, color: A, fontWeight: 700 }}>{u.pct}%</span>
+                </div>
+                <div style={{ fontSize: 13, color: "#888", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {u.lm || "👋 대화를 시작해보세요"}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <Nav />
+    </div>
+  );
 
   // ═══ 채팅 ═══
   if (scr === SC.CHAT && chatU) return (
