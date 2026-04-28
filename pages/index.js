@@ -1627,7 +1627,7 @@ export default function App() {
                     </div>
                   </div>
                   <div style={{ padding: "8px 10px" }}>
-                    <div style={{ fontSize: 13, fontWeight: 800 }}>{m.name} <span style={{ fontSize: 10, color: "#555", fontWeight: 400 }}>{m.age} {m.g}</span></div>
+                    <div style={{ fontSize: 13, fontWeight: 800 }}>{m.name}{(m.age > 0 || m.g) && <span style={{ fontSize: 10, color: "#555", fontWeight: 400 }}> {m.age > 0 ? m.age : ""}{m.age > 0 && m.g ? " " : ""}{m.g}</span>}</div>
                     <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
                       <button onClick={() => setSwpI(i => i + 1)} style={{ width: 34, height: 34, borderRadius: "50%", background: SL, border: `2px solid ${BD}`, color: "#999", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>👋</button>
                       <button onClick={() => { handleLike(m); setSwpI(idx => idx + 1); }}
@@ -1714,8 +1714,8 @@ export default function App() {
                     <div style={{ position: "absolute", bottom: 5, right: 5, fontSize: 10, fontWeight: 800, color: mc(u.pct) }}>{u.pct}%</div>
                   </div>
                   <div style={{ padding: "6px 8px" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{u.name} <span style={{ fontSize: 9, color: "#555" }}>{u.age}</span></div>
-                    <div style={{ fontSize: 9, color: "#555", marginTop: 1 }}>{u.region}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{u.name}{u.age > 0 && <span style={{ fontSize: 9, color: "#555", fontWeight: 400 }}> {u.age}</span>}</div>
+                    {u.region && <div style={{ fontSize: 9, color: "#555", marginTop: 1 }}>{u.region}</div>}
                     <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
                       {u.mp.slice(0, 2).map(i => <span key={i} style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: A+"18", color: A }}>{P()[i]}</span>)}
                     </div>
@@ -1754,8 +1754,8 @@ export default function App() {
                     {u.on && <div style={{ position: "absolute", bottom: 0, right: 0, width: 8, height: 8, borderRadius: "50%", background: "#4ade80", border: "2px solid #ffffff" }} />}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{u.name} <span style={{ fontSize: 9, color: "#555" }}>{u.age} {u.g}</span></div>
-                    <div style={{ fontSize: 10, color: "#777", marginTop: 1 }}>{u.bio}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{u.name}{(u.age > 0 || u.g) && <span style={{ fontSize: 9, color: "#555", fontWeight: 400 }}> {u.age > 0 ? u.age : ""}{u.age > 0 && u.g ? " " : ""}{u.g}</span>}</div>
+                    {u.bio && <div style={{ fontSize: 10, color: "#777", marginTop: 1 }}>{u.bio}</div>}
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 900, color: mc(u.pct) }}>{u.pct}%</div>
                 </div>
@@ -1907,10 +1907,10 @@ export default function App() {
               </div>
               <div style={{ padding: "16px 20px" }}>
                 <div style={{ fontSize: 20, fontWeight: 800 }}>
-                  {m.name} <span style={{ fontSize: 14, color: "#555", fontWeight: 400 }}>{m.age} {m.g}</span>
+                  {m.name}{(m.age > 0 || m.g) && <span style={{ fontSize: 14, color: "#555", fontWeight: 400 }}> {m.age > 0 ? m.age : ""}{m.age > 0 && m.g ? " " : ""}{m.g}</span>}
                 </div>
                 <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>
-                  {m.region} · {m.on ? t("online") : m.la}
+                  {m.region ? `${m.region} · ` : ""}{m.on ? t("online") : m.la}
                 </div>
                 <p style={{ fontSize: 13, color: "#999", margin: "10px 0", lineHeight: 1.5 }}>{m.bio}</p>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
@@ -2092,8 +2092,8 @@ export default function App() {
                 <div style={{ position: "absolute", bottom: 8, right: 8, fontSize: 12, fontWeight: 800, color: mc(u.pct) }}>{u.pct}%</div>
               </div>
               <div style={{ padding: "10px 12px" }}>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>{u.name} <span style={{ fontSize: 11, color: "#555" }}>{u.age}</span></div>
-                <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{u.region}</div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{u.name}{u.age > 0 && <span style={{ fontSize: 11, color: "#555", fontWeight: 400 }}> {u.age}</span>}</div>
+                {u.region && <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{u.region}</div>}
                 <div style={{ display: "flex", gap: 3, marginTop: 6, flexWrap: "wrap" }}>
                   {u.mp.slice(0, 2).map(i => (
                     <span key={i} style={{ fontSize: 9, padding: "2px 6px", borderRadius: 6, background: A+"18", color: A }}>{P()[i]}</span>
@@ -2124,9 +2124,11 @@ export default function App() {
             fontSize: 32, fontWeight: 700, color: "#fff"
           }}>{u.name[0]}</div>
           <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>
-            {u.name} <span style={{ fontSize: 14, color: "#555" }}>{u.age} {u.g}</span>
+            {u.name}{(u.age > 0 || u.g) && <span style={{ fontSize: 14, color: "#555", fontWeight: 400 }}> {u.age > 0 ? u.age : ""}{u.age > 0 && u.g ? " " : ""}{u.g}</span>}
           </h2>
-          <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>{u.region} · {u.on ? t("online") : u.la}</div>
+          <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>
+            {u.region ? `${u.region} · ` : ""}{u.on ? t("online") : u.la}
+          </div>
           <div style={{ marginTop: 8 }}><Badge has={u.badge} size={14} /></div>
           {u.v && <div style={{ fontSize: 12, color: A, marginTop: 4 }}>⭐ {P()[u.vp]} {t("verified")}</div>}
         </div>
