@@ -922,8 +922,9 @@ export default function App() {
 
   // 좋아요 + 상호 좋아요 시 매칭 처리
   const handleLike = async (u) => {
-    if (!u || liked.includes(u.id)) { setSwpI(i => i + 1); return; }
+    if (!u || liked.includes(u.id)) return;
     setLiked(p => [...p, u.id]);
+    setSwpI(0);
     if (!authUser) { st("💕 " + t("like") + "!"); return; }
     try {
       await set(ref(db, `${DB_LIKES}/${authUser.uid}/${u.id}`), true);
@@ -1588,7 +1589,7 @@ export default function App() {
 
   // ═══ PC 전체화면 레이아웃 ═══
   if (isDesktop && user && [SC.HOME, SC.LOUNGE, SC.CHAT].includes(scr)) {
-    const pool = filteredUsers.filter(u => u.mp.some(x => intP.includes(x)) || u.ip.some(x => myP.includes(x)));
+    const pool = filteredUsers.filter(u => !liked.includes(u.id) && (u.mp.some(x => intP.includes(x)) || u.ip.some(x => myP.includes(x))));
     const m = pool[swpI % Math.max(pool.length, 1)];
     return (
       <div style={{ display: "flex", width: "100vw", height: "100vh", background: "#0d0d0d", color: "#1a1a1a", fontFamily: "'Noto Sans KR', system-ui, sans-serif", overflow: "hidden" }}>
@@ -1630,7 +1631,7 @@ export default function App() {
                     <div style={{ fontSize: 13, fontWeight: 800 }}>{m.name}{(m.age > 0 || m.g) && <span style={{ fontSize: 10, color: "#555", fontWeight: 400 }}> {m.age > 0 ? m.age : ""}{m.age > 0 && m.g ? " " : ""}{m.g}</span>}</div>
                     <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
                       <button onClick={() => setSwpI(i => i + 1)} style={{ width: 34, height: 34, borderRadius: "50%", background: SL, border: `2px solid ${BD}`, color: "#999", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>👋</button>
-                      <button onClick={() => { handleLike(m); setSwpI(idx => idx + 1); }}
+                      <button onClick={() => { handleLike(m); }}
                         style={{ flex: 1, height: 34, borderRadius: 17, background: `linear-gradient(135deg,${AS},${A})`, border: "none", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {liked.includes(m.id) ? "❤️" : "🤍"} {t("like")}
                       </button>
@@ -1830,7 +1831,7 @@ export default function App() {
 
   // ═══ HOME — 스와이프 디스커버 ═══
   if (scr === SC.HOME) {
-    const pool = filteredUsers.filter(u => u.mp.some(x => intP.includes(x)) || u.ip.some(x => myP.includes(x)));
+    const pool = filteredUsers.filter(u => !liked.includes(u.id) && (u.mp.some(x => intP.includes(x)) || u.ip.some(x => myP.includes(x))));
     const m = pool[swpI % Math.max(pool.length, 1)];
     return (
       <div style={{ ...base, paddingBottom: 72 }}>
@@ -1912,7 +1913,7 @@ export default function App() {
                 <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>
                   {m.region ? `${m.region} · ` : ""}{m.on ? t("online") : m.la}
                 </div>
-                <p style={{ fontSize: 13, color: "#999", margin: "10px 0", lineHeight: 1.5 }}>{m.bio}</p>
+                {m.bio && <p style={{ fontSize: 13, color: "#999", margin: "10px 0", lineHeight: 1.5 }}>{m.bio}</p>}
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
                   {m.mp.map(i => (
                     <span key={"m"+i} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, background: A+"18", color: A }}>✨ {P()[i]}</span>
@@ -1927,7 +1928,7 @@ export default function App() {
                     border: `2px solid ${BD}`, color: "#999", fontSize: 26,
                     cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
                   }}>👋</button>
-                  <button onClick={() => { handleLike(m); setSwpI(idx => idx + 1); }} style={{
+                  <button onClick={() => { handleLike(m); }} style={{
                     flex: 1, height: 54, borderRadius: 27,
                     background: liked.includes(m.id) ? `${A}88` : `linear-gradient(135deg,${AS},${A})`,
                     border: "none", color: "#fff", fontSize: 16, fontWeight: 700,
