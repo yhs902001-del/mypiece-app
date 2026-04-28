@@ -2397,9 +2397,11 @@ export default function App() {
           <div style={{ marginTop: 8 }}><Badge has={u.badge} size={14} /></div>
           {u.v && <div style={{ fontSize: 12, color: A, marginTop: 4 }}>⭐ {P()[u.vp]} {t("verified")}</div>}
         </div>
-        <div style={{ background: SL, borderRadius: 14, padding: 16, marginBottom: 12, border: `1px solid ${BD}` }}>
-          <div style={{ fontSize: 14, color: "#555", lineHeight: 1.6 }}>{u.bio}</div>
-        </div>
+        {u.bio ? (
+          <div style={{ background: SL, borderRadius: 14, padding: 16, marginBottom: 12, border: `1px solid ${BD}` }}>
+            <div style={{ fontSize: 14, color: "#555", lineHeight: 1.6 }}>{u.bio}</div>
+          </div>
+        ) : null}
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
           <div style={{ flex: 1, background: SF, borderRadius: 14, padding: 12 }}>
             <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>✨ {t("myPiece")}</div>
@@ -2592,6 +2594,19 @@ export default function App() {
         </div>
       ) : (
         <>
+          {(user?.age || user?.gender || user?.bio) && (
+            <div style={{ background: SF, borderRadius: 14, padding: "12px 16px", marginBottom: 12 }}>
+              {(user?.age || user?.gender) && (
+                <div style={{ fontSize: 13, color: "#444", marginBottom: user?.bio ? 6 : 0 }}>
+                  {user?.age && <span>{user.age}세</span>}
+                  {user?.age && user?.gender && <span> · </span>}
+                  {user?.gender && <span>{user.gender === "F" ? "👩 여성" : "👨 남성"}</span>}
+                </div>
+              )}
+              {user?.bio && <div style={{ fontSize: 13, color: "#666", lineHeight: 1.5 }}>{user.bio}</div>}
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <div style={{ flex: 1, background: SF, borderRadius: 14, padding: 12 }}>
               <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>✨ {t("myPiece")}</div>
