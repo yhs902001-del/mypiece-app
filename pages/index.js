@@ -1873,6 +1873,13 @@ export default function App() {
               {pool.length} nearby
             </div>
           </div>
+          {!m && (
+            <div style={{ textAlign: "center", padding: "40px 20px", background: SF, borderRadius: 24, border: `1px solid ${BD}` }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>✨</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#444", marginBottom: 6 }}>모두 확인했어요!</div>
+              <div style={{ fontSize: 13, color: "#888" }}>라운지에서 더 많은 사람을 만나보세요</div>
+            </div>
+          )}
           {m && (
             <div style={{
               background: `linear-gradient(160deg,${SF},${SL})`,
