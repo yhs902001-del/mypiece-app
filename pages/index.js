@@ -1213,102 +1213,9 @@ export default function App() {
               src="https://images.unsplash.com/photo-1601887389937-0b02c26b602c?w=240&h=350&fit=crop&q=85&auto=format"
               alt="Classical sculpture"
               loading="eager"
+              onError={e => { e.target.style.display = "none"; }}
               style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", filter:"sepia(0.06) saturate(1.05) contrast(1.02)" }}
             />
-            <svg width="0" height="0" style={{display:"none"}}>
-              <defs>
-                {/* 메인 피부 톤 — 위에서 내려오는 자연광 */}
-                <radialGradient id="sk1" cx="40%" cy="22%" r="75%">
-                  <stop offset="0" stopColor="#FFF0DC"/>
-                  <stop offset="0.18" stopColor="#FBD9B8"/>
-                  <stop offset="0.42" stopColor="#E8A77F"/>
-                  <stop offset="0.72" stopColor="#A86338"/>
-                  <stop offset="1" stopColor="#4A2410"/>
-                </radialGradient>
-                {/* 리플렉션 림 라이트 (우측) */}
-                <radialGradient id="rim1" cx="88%" cy="55%" r="35%">
-                  <stop stopColor="rgba(255,190,140,0.55)"/>
-                  <stop offset="1" stopColor="rgba(255,190,140,0)"/>
-                </radialGradient>
-                {/* 톱 스팟 라이트 */}
-                <radialGradient id="spot1" cx="28%" cy="12%" r="38%">
-                  <stop stopColor="rgba(255,245,225,0.75)"/>
-                  <stop offset="1" stopColor="rgba(255,245,225,0)"/>
-                </radialGradient>
-                {/* 좌측 섀도우 */}
-                <linearGradient id="sh1" x1="0" y1="0" x2="1" y2="0">
-                  <stop stopColor="rgba(0,0,0,0.42)"/>
-                  <stop offset="0.4" stopColor="rgba(0,0,0,0)"/>
-                </linearGradient>
-                {/* 하단 그림자 페이드 */}
-                <linearGradient id="fade1" x1="48" y1="80" x2="48" y2="140" gradientUnits="userSpaceOnUse">
-                  <stop stopColor="rgba(0,0,0,0)"/>
-                  <stop offset="1" stopColor="rgba(0,0,0,0.72)"/>
-                </linearGradient>
-                {/* 크림 갤러리 배경 */}
-                <radialGradient id="bg1" cx="50%" cy="40%" r="75%">
-                  <stop stopColor="#fff3ea"/>
-                  <stop offset="0.6" stopColor="#f5e3d0"/>
-                  <stop offset="1" stopColor="#ecd4b8"/>
-                </radialGradient>
-                {/* 대리석 질감 */}
-                <filter id="grain1" x="0" y="0" width="100%" height="100%">
-                  <feTurbulence type="fractalNoise" baseFrequency="1.8" numOctaves="2" seed="3"/>
-                  <feColorMatrix values="0 0 0 0 0.9  0 0 0 0 0.7  0 0 0 0 0.55  0 0 0 0.08 0"/>
-                  <feComposite in2="SourceGraphic" operator="in"/>
-                </filter>
-              </defs>
-
-              {/* 미술관 배경 */}
-              <rect width="96" height="140" fill="url(#bg1)"/>
-
-              {/* ───── 목 ───── */}
-              <path d="M48 6 C42 6 38 10 37 17 L35 30 Q42 31 48 31 Q54 31 61 30 L59 17 C58 10 54 6 48 6 Z" fill="url(#sk1)"/>
-              {/* 목 왼쪽 섀도우 */}
-              <path d="M48 6 C42 6 38 10 37 17 L35 30 Q41 30 44 30 L44 10 C44 7 46 6 48 6 Z" fill="rgba(0,0,0,0.22)"/>
-
-              {/* ───── 어깨·가슴·몸통 (큰 몸체) ───── */}
-              <path d="M35 30 C20 33 4 44 1 62 C-2 78 5 93 14 101 C21 107 30 111 33 120 L33 140 L63 140 L63 120 C66 111 75 107 82 101 C91 93 98 78 95 62 C92 44 76 33 61 30 L59 42 Q48 48 37 42 Z" fill="url(#sk1)"/>
-
-              {/* 전체 음영 (왼쪽에서 빛) */}
-              <path d="M35 30 C20 33 4 44 1 62 C-2 78 5 93 14 101 C21 107 30 111 33 120 L33 140 L63 140 L63 120 C66 111 75 107 82 101 C91 93 98 78 95 62 C92 44 76 33 61 30 L59 42 Q48 48 37 42 Z" fill="url(#sh1)"/>
-
-              {/* 가슴 근육 분할 (중앙 홈) */}
-              <path d="M48 46 Q47 62 48 80 Q49 62 48 46 Z" fill="rgba(0,0,0,0.28)"/>
-              {/* 가슴 좌측 볼륨 */}
-              <ellipse cx="34" cy="60" rx="14" ry="10" fill="rgba(255,220,185,0.18)"/>
-              {/* 가슴 우측 볼륨 */}
-              <ellipse cx="62" cy="60" rx="14" ry="10" fill="rgba(255,220,185,0.18)"/>
-              {/* 가슴 하단 그늘 (pectoral lower shadow) */}
-              <path d="M22 68 Q34 74 48 72 Q62 74 74 68" stroke="rgba(0,0,0,0.35)" strokeWidth="2" fill="none" strokeLinecap="round"/>
-
-              {/* 쇄골 — 좌우 */}
-              <path d="M22 40 Q36 36 48 38" stroke="rgba(0,0,0,0.32)" strokeWidth="1.3" fill="none" strokeLinecap="round"/>
-              <path d="M48 38 Q60 36 74 40" stroke="rgba(0,0,0,0.32)" strokeWidth="1.3" fill="none" strokeLinecap="round"/>
-              {/* 쇄골 하이라이트 */}
-              <path d="M24 39 Q36 35.5 47 37.5" stroke="rgba(255,235,210,0.55)" strokeWidth="0.7" fill="none"/>
-              <path d="M49 37.5 Q60 35.5 72 39" stroke="rgba(255,235,210,0.55)" strokeWidth="0.7" fill="none"/>
-
-              {/* 어깨 근육 탑 하이라이트 */}
-              <ellipse cx="18" cy="48" rx="10" ry="6" fill="rgba(255,230,205,0.28)"/>
-              <ellipse cx="78" cy="48" rx="10" ry="6" fill="rgba(255,230,205,0.28)"/>
-
-              {/* 복근 라인 (미묘) */}
-              <path d="M48 82 L48 110" stroke="rgba(0,0,0,0.22)" strokeWidth="1" strokeDasharray="0.5 1.5" fill="none"/>
-              <path d="M40 92 Q48 90 56 92" stroke="rgba(0,0,0,0.18)" strokeWidth="0.7" fill="none"/>
-              <path d="M40 102 Q48 100 56 102" stroke="rgba(0,0,0,0.18)" strokeWidth="0.7" fill="none"/>
-
-              {/* 상단 스팟라이트 */}
-              <path d="M35 30 C20 33 4 44 1 62 C-2 78 5 93 14 101 C21 107 30 111 33 120 L33 140 L63 140 L63 120 C66 111 75 107 82 101 C91 93 98 78 95 62 C92 44 76 33 61 30 Z" fill="url(#spot1)"/>
-              {/* 림 라이트 */}
-              <path d="M35 30 C20 33 4 44 1 62 C-2 78 5 93 14 101 C21 107 30 111 33 120 L33 140 L63 140 L63 120 C66 111 75 107 82 101 C91 93 98 78 95 62 C92 44 76 33 61 30 Z" fill="url(#rim1)"/>
-
-              {/* 대리석 질감 오버레이 */}
-              <rect width="96" height="140" filter="url(#grain1)" opacity="0.35"/>
-
-              {/* 바닥 페이드 */}
-              <rect width="96" height="140" fill="url(#fade1)"/>
-            </svg>
             <div style={{ position:"absolute", inset:0, borderRadius:12, boxShadow:"inset 0 0 24px rgba(200, 130, 90, 0.22), inset 0 0 4px rgba(232, 145, 106, 0.12)", pointerEvents:"none" }}/>
           </div>
         </div>
@@ -1324,100 +1231,9 @@ export default function App() {
               src="https://images.unsplash.com/photo-1609856699475-6fc22afa6d31?w=200&h=480&fit=crop&q=85&auto=format"
               alt="Classical sculpture full body"
               loading="eager"
+              onError={e => { e.target.style.display = "none"; }}
               style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", filter:"sepia(0.06) saturate(1.05) contrast(1.02)" }}
             />
-            <svg width="0" height="0" style={{display:"none"}}>
-              <defs>
-                <radialGradient id="sk2" cx="52%" cy="18%" r="78%">
-                  <stop offset="0" stopColor="#FFF2DE"/>
-                  <stop offset="0.18" stopColor="#FADABA"/>
-                  <stop offset="0.45" stopColor="#D5956A"/>
-                  <stop offset="0.75" stopColor="#7A4422"/>
-                  <stop offset="1" stopColor="#2E1609"/>
-                </radialGradient>
-                <radialGradient id="spot2" cx="62%" cy="10%" r="48%">
-                  <stop stopColor="rgba(255,240,215,0.62)"/>
-                  <stop offset="1" stopColor="rgba(255,240,215,0)"/>
-                </radialGradient>
-                <radialGradient id="rim2" cx="95%" cy="45%" r="30%">
-                  <stop stopColor="rgba(255,200,160,0.4)"/>
-                  <stop offset="1" stopColor="rgba(255,200,160,0)"/>
-                </radialGradient>
-                <linearGradient id="sh2" x1="0" y1="0" x2="1" y2="0">
-                  <stop stopColor="rgba(0,0,0,0.35)"/>
-                  <stop offset="0.35" stopColor="rgba(0,0,0,0)"/>
-                </linearGradient>
-                <linearGradient id="fade2" x1="41" y1="150" x2="41" y2="200" gradientUnits="userSpaceOnUse">
-                  <stop stopColor="rgba(0,0,0,0)"/>
-                  <stop offset="1" stopColor="rgba(0,0,0,0.78)"/>
-                </linearGradient>
-                <radialGradient id="bg2" cx="50%" cy="35%" r="78%">
-                  <stop stopColor="#fff5ec"/>
-                  <stop offset="0.6" stopColor="#f3e0cc"/>
-                  <stop offset="1" stopColor="#e8ccaf"/>
-                </radialGradient>
-                <filter id="grain2" x="0" y="0" width="100%" height="100%">
-                  <feTurbulence type="fractalNoise" baseFrequency="1.7" numOctaves="2" seed="7"/>
-                  <feColorMatrix values="0 0 0 0 0.88  0 0 0 0 0.68  0 0 0 0 0.52  0 0 0 0.09 0"/>
-                  <feComposite in2="SourceGraphic" operator="in"/>
-                </filter>
-              </defs>
-
-              <rect width="82" height="200" fill="url(#bg2)"/>
-
-              {/* 머리 (뒷통수) */}
-              <ellipse cx="41" cy="18" rx="13" ry="15" fill="url(#sk2)"/>
-              {/* 올림머리 힌트 */}
-              <ellipse cx="41" cy="10" rx="6" ry="3.5" fill="rgba(0,0,0,0.28)"/>
-              {/* 머리카락 질감 */}
-              <path d="M30 22 Q41 13 52 22" stroke="rgba(0,0,0,0.22)" strokeWidth="0.6" fill="none"/>
-              <path d="M32 26 Q41 18 50 26" stroke="rgba(0,0,0,0.22)" strokeWidth="0.6" fill="none"/>
-
-              {/* 목 */}
-              <path d="M35 30 L34 40 Q41 42 48 40 L47 30 C45 29 37 29 35 30 Z" fill="url(#sk2)"/>
-              <path d="M34 40 Q41 38 48 40" stroke="rgba(0,0,0,0.32)" strokeWidth="0.8" fill="none"/>
-
-              {/* 등 전체 */}
-              <path d="M33 40 C20 43 8 53 6 70 C3 84 9 97 17 105 C22 110 28 114 31 122 L31 140 L51 140 L51 122 C54 114 60 110 65 105 C73 97 79 84 76 70 C74 53 62 43 49 40 Z" fill="url(#sk2)"/>
-              {/* 등 좌측 섀도우 */}
-              <path d="M33 40 C20 43 8 53 6 70 C3 84 9 97 17 105 C22 110 28 114 31 122 L31 140 L42 140 L42 40 Z" fill="url(#sh2)"/>
-
-              {/* 척추 홈 (깊이감) */}
-              <path d="M41 42 Q40 70 41 100 Q41 120 41 136" stroke="rgba(0,0,0,0.45)" strokeWidth="1.4" fill="none" strokeLinecap="round"/>
-              <path d="M41 42 Q40.5 70 41 100 Q41 120 41 136" stroke="rgba(255,225,195,0.12)" strokeWidth="0.5" fill="none" strokeLinecap="round"/>
-
-              {/* 견갑골 */}
-              <ellipse cx="25" cy="58" rx="7" ry="10" fill="rgba(0,0,0,0.18)"/>
-              <ellipse cx="57" cy="58" rx="7" ry="10" fill="rgba(0,0,0,0.18)"/>
-              <ellipse cx="25" cy="55" rx="5" ry="7" fill="rgba(255,220,190,0.2)"/>
-              <ellipse cx="57" cy="55" rx="5" ry="7" fill="rgba(255,220,190,0.2)"/>
-
-              {/* 허리 비너스 딤플 */}
-              <ellipse cx="34" cy="132" rx="1.5" ry="2" fill="rgba(0,0,0,0.35)"/>
-              <ellipse cx="48" cy="132" rx="1.5" ry="2" fill="rgba(0,0,0,0.35)"/>
-
-              {/* 허리·엉덩이 */}
-              <path d="M31 140 C23 144 14 154 11 169 C8 183 13 195 20 200 L32 197 C33 189 35 179 35 169 L35 152 L47 152 L47 169 C47 179 49 189 50 197 L62 200 C69 195 74 183 71 169 C68 154 59 144 51 140 Z" fill="url(#sk2)"/>
-              {/* 엉덩이 분할 */}
-              <path d="M41 152 Q41 175 41 196" stroke="rgba(0,0,0,0.5)" strokeWidth="1.8" fill="none" strokeLinecap="round"/>
-              {/* 왼쪽 엉덩이 볼륨 */}
-              <ellipse cx="25" cy="172" rx="9" ry="14" fill="rgba(255,225,195,0.2)"/>
-              {/* 오른쪽 엉덩이 볼륨 */}
-              <ellipse cx="57" cy="172" rx="9" ry="14" fill="rgba(255,225,195,0.2)"/>
-              {/* 왼쪽 엉덩이 하단 섀도우 */}
-              <path d="M22 183 Q27 192 33 186" stroke="rgba(0,0,0,0.22)" strokeWidth="1.2" fill="none"/>
-              <path d="M49 186 Q55 192 60 183" stroke="rgba(0,0,0,0.22)" strokeWidth="1.2" fill="none"/>
-
-              {/* 상단 스팟 */}
-              <path d="M33 40 C20 43 8 53 6 70 C3 84 9 97 17 105 C22 110 28 114 31 122 L31 140 L51 140 L51 122 C54 114 60 110 65 105 C73 97 79 84 76 70 C74 53 62 43 49 40 Z" fill="url(#spot2)"/>
-              {/* 우측 림 */}
-              <path d="M31 140 C23 144 14 154 11 169 C8 183 13 195 20 200 L32 197 C33 189 35 179 35 169 L35 152 L47 152 L47 169 C47 179 49 189 50 197 L62 200 C69 195 74 183 71 169 C68 154 59 144 51 140 Z" fill="url(#rim2)"/>
-
-              {/* 대리석 질감 */}
-              <rect width="82" height="200" filter="url(#grain2)" opacity="0.32"/>
-
-              <rect width="82" height="200" fill="url(#fade2)"/>
-            </svg>
             <div style={{ position:"absolute", inset:0, boxShadow:"inset 0 0 28px rgba(200, 130, 90, 0.28), inset 0 0 5px rgba(232, 145, 106, 0.15)", pointerEvents:"none" }}/>
           </div>
         </div>
@@ -1433,92 +1249,9 @@ export default function App() {
               src="https://images.unsplash.com/photo-1572379371012-9e11bfc61b35?w=240&h=320&fit=crop&q=85&auto=format"
               alt="Classical sculpture lower torso"
               loading="eager"
+              onError={e => { e.target.style.display = "none"; }}
               style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", filter:"sepia(0.06) saturate(1.05) contrast(1.02)" }}
             />
-            <svg width="0" height="0" style={{display:"none"}}>
-              <defs>
-                <radialGradient id="sk3" cx="42%" cy="22%" r="72%">
-                  <stop offset="0" stopColor="#FFF4E2"/>
-                  <stop offset="0.2" stopColor="#FADDBC"/>
-                  <stop offset="0.48" stopColor="#DA9A6D"/>
-                  <stop offset="0.75" stopColor="#8C4F25"/>
-                  <stop offset="1" stopColor="#3E1F0B"/>
-                </radialGradient>
-                <radialGradient id="spot3" cx="32%" cy="14%" r="48%">
-                  <stop stopColor="rgba(255,242,220,0.68)"/>
-                  <stop offset="1" stopColor="rgba(255,242,220,0)"/>
-                </radialGradient>
-                <radialGradient id="rim3" cx="92%" cy="50%" r="32%">
-                  <stop stopColor="rgba(255,195,150,0.45)"/>
-                  <stop offset="1" stopColor="rgba(255,195,150,0)"/>
-                </radialGradient>
-                <linearGradient id="sh3" x1="0" y1="0" x2="1" y2="0">
-                  <stop stopColor="rgba(0,0,0,0.38)"/>
-                  <stop offset="0.35" stopColor="rgba(0,0,0,0)"/>
-                </linearGradient>
-                <linearGradient id="fade3" x1="48" y1="70" x2="48" y2="130" gradientUnits="userSpaceOnUse">
-                  <stop stopColor="rgba(0,0,0,0)"/>
-                  <stop offset="1" stopColor="rgba(0,0,0,0.75)"/>
-                </linearGradient>
-                <radialGradient id="bg3" cx="50%" cy="40%" r="75%">
-                  <stop stopColor="#fff3e8"/>
-                  <stop offset="0.6" stopColor="#f4e1cd"/>
-                  <stop offset="1" stopColor="#ead0b4"/>
-                </radialGradient>
-                <filter id="grain3" x="0" y="0" width="100%" height="100%">
-                  <feTurbulence type="fractalNoise" baseFrequency="1.9" numOctaves="2" seed="11"/>
-                  <feColorMatrix values="0 0 0 0 0.92  0 0 0 0 0.72  0 0 0 0 0.56  0 0 0 0.08 0"/>
-                  <feComposite in2="SourceGraphic" operator="in"/>
-                </filter>
-              </defs>
-
-              <rect width="96" height="130" fill="url(#bg3)"/>
-
-              {/* 허리·골반 전체 */}
-              <path d="M34 4 L62 4 C76 8 88 22 90 40 C92 56 86 72 75 81 C68 87 63 97 63 108 L63 128 L50 128 Q48 118 48 105 Q48 118 46 128 L33 128 L33 108 C33 97 28 87 21 81 C10 72 4 56 6 40 C8 22 20 8 34 4 Z" fill="url(#sk3)"/>
-              {/* 좌측 섀도우 */}
-              <path d="M34 4 L48 4 L48 128 L33 128 L33 108 C33 97 28 87 21 81 C10 72 4 56 6 40 C8 22 20 8 34 4 Z" fill="url(#sh3)"/>
-
-              {/* 복근 중앙 라인 */}
-              <path d="M48 10 L48 70" stroke="rgba(0,0,0,0.32)" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
-              {/* 복근 횡선 — 6팩 힌트 */}
-              <path d="M38 22 Q48 20 58 22" stroke="rgba(0,0,0,0.22)" strokeWidth="0.8" fill="none"/>
-              <path d="M36 36 Q48 34 60 36" stroke="rgba(0,0,0,0.22)" strokeWidth="0.8" fill="none"/>
-              <path d="M36 50 Q48 48 60 50" stroke="rgba(0,0,0,0.22)" strokeWidth="0.8" fill="none"/>
-              {/* 복근 하이라이트 */}
-              <ellipse cx="40" cy="28" rx="5" ry="5" fill="rgba(255,230,200,0.16)"/>
-              <ellipse cx="56" cy="28" rx="5" ry="5" fill="rgba(255,230,200,0.16)"/>
-              <ellipse cx="40" cy="42" rx="5" ry="5" fill="rgba(255,230,200,0.14)"/>
-              <ellipse cx="56" cy="42" rx="5" ry="5" fill="rgba(255,230,200,0.14)"/>
-
-              {/* 배꼽 */}
-              <ellipse cx="48" cy="58" rx="1.5" ry="2.2" fill="rgba(0,0,0,0.55)"/>
-              <path d="M48 56.5 L48 59.5" stroke="rgba(0,0,0,0.7)" strokeWidth="0.7" strokeLinecap="round"/>
-
-              {/* V라인 (장골극) */}
-              <path d="M28 72 Q36 78 48 82" stroke="rgba(0,0,0,0.4)" strokeWidth="1.3" fill="none" strokeLinecap="round"/>
-              <path d="M48 82 Q60 78 68 72" stroke="rgba(0,0,0,0.4)" strokeWidth="1.3" fill="none" strokeLinecap="round"/>
-              {/* V라인 하이라이트 */}
-              <path d="M30 71 Q37 77 47 81" stroke="rgba(255,230,200,0.35)" strokeWidth="0.5" fill="none"/>
-              <path d="M49 81 Q59 77 66 71" stroke="rgba(255,230,200,0.35)" strokeWidth="0.5" fill="none"/>
-
-              {/* 골반 좌우 볼륨 */}
-              <ellipse cx="18" cy="48" rx="8" ry="14" fill="rgba(255,220,190,0.14)"/>
-              <ellipse cx="78" cy="48" rx="8" ry="14" fill="rgba(255,220,190,0.14)"/>
-
-              {/* 허리 잘록 라인 */}
-              <path d="M26 32 Q48 26 70 32" stroke="rgba(255,215,180,0.22)" strokeWidth="0.8" fill="none"/>
-
-              {/* 상단 스팟 */}
-              <path d="M34 4 L62 4 C76 8 88 22 90 40 C92 56 86 72 75 81 C68 87 63 97 63 108 L63 128 L50 128 Q48 118 48 105 Q48 118 46 128 L33 128 L33 108 C33 97 28 87 21 81 C10 72 4 56 6 40 C8 22 20 8 34 4 Z" fill="url(#spot3)"/>
-              {/* 우측 림 */}
-              <path d="M34 4 L62 4 C76 8 88 22 90 40 C92 56 86 72 75 81 C68 87 63 97 63 108 L63 128 L50 128 Q48 118 48 105 Q48 118 46 128 L33 128 L33 108 C33 97 28 87 21 81 C10 72 4 56 6 40 C8 22 20 8 34 4 Z" fill="url(#rim3)"/>
-
-              {/* 대리석 질감 */}
-              <rect width="96" height="130" filter="url(#grain3)" opacity="0.35"/>
-
-              <rect width="96" height="130" fill="url(#fade3)"/>
-            </svg>
             <div style={{ position:"absolute", inset:0, borderRadius:12, boxShadow:"inset 0 0 22px rgba(200, 130, 90, 0.22), inset 0 0 4px rgba(232, 145, 106, 0.12)", pointerEvents:"none" }}/>
           </div>
         </div>
