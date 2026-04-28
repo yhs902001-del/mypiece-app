@@ -4,7 +4,7 @@ import Head from "next/head";
 const SITE_NAME = "MyPiece";
 const SITE_DESC = "MyPiece — Find Your Piece. 나의 매력 포인트로 만나는 새로운 인연.";
 const SITE_URL = "https://mypiece.app";
-const OG_IMAGE = "/og-image.png";
+const OG_IMAGE = `${SITE_URL}/og-image.png`;
 const THEME = "#FF6B45";
 
 export default function App({ Component, pageProps }) {
@@ -19,7 +19,8 @@ export default function App({ Component, pageProps }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content={SITE_NAME} />
         <link rel="icon" href="/favicon.ico" />
-        <link rel="apple-touch-icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/icon.png" />
+        <link rel="apple-touch-icon" sizes="512x512" href="/icon.png" />
 
         {/* Open Graph */}
         <meta property="og:type" content="website" />

@@ -688,6 +688,12 @@ export default function App() {
   const [editNick, setEditNick] = useState("");
   const [editMyP, setEditMyP] = useState([]);
   const [editIntP, setEditIntP] = useState([]);
+  const [signupAge, setSignupAge] = useState("");
+  const [signupGender, setSignupGender] = useState("");
+  const [signupBio, setSignupBio] = useState("");
+  const [editAge, setEditAge] = useState("");
+  const [editGender, setEditGender] = useState("");
+  const [editBio, setEditBio] = useState("");
   const [notifOn, setNotifOn] = useState(true);
   const [photoURLs, setPhotoURLs] = useState({});
   const [uploading, setUploading] = useState({});
@@ -748,6 +754,9 @@ export default function App() {
           setIntP(myIp);
           setBlocked(blockedList);
           setUser(data);
+          setSignupAge(data.age ? String(data.age) : "");
+          setSignupGender(data.gender || "");
+          setSignupBio(data.bio || "");
           await loadUsersAndRelations(fbUser.uid, myMp, myIp, blockedList);
           setScr(SC.HOME);
         } else {
@@ -901,7 +910,7 @@ export default function App() {
 
   // 프로필 완성 → Firebase 저장
   const complete = async () => {
-    const profile = { nickname: nick, myPieces: myP, intPieces: intP, verified: vDone, vParts, photoURLs, badge: false, createdAt: Date.now() };
+    const profile = { nickname: nick, age: Number(signupAge) || 0, gender: signupGender, bio: signupBio, myPieces: myP, intPieces: intP, verified: vDone, vParts, photoURLs, badge: false, createdAt: Date.now() };
     setUser(profile);
     if (authUser) {
       await set(ref(db, `${DB_USERS}/${authUser.uid}`), profile);
@@ -1011,9 +1020,10 @@ export default function App() {
   // 프로필 수정 저장
   const saveProfile = async () => {
     if (editNick.length < 2) return;
-    const updated = { ...user, nickname: editNick, myPieces: editMyP, intPieces: editIntP };
+    const updated = { ...user, nickname: editNick, age: Number(editAge) || user?.age || 0, gender: editGender || user?.gender || "", bio: editBio, myPieces: editMyP, intPieces: editIntP };
     setUser(updated);
     setNick(editNick); setMyP(editMyP); setIntP(editIntP);
+    setSignupAge(String(updated.age)); setSignupGender(updated.gender); setSignupBio(updated.bio);
     if (authUser) await set(ref(db, `${DB_USERS}/${authUser.uid}`), updated);
     setEditMode(false);
     st("프로필 저장 완료!");
@@ -1025,6 +1035,7 @@ export default function App() {
     setUser(null);
     setAuthUser(null);
     setNick(""); setMyP([]); setIntP([]);
+    setSignupAge(""); setSignupGender(""); setSignupBio("");
     setScr(SC.LANG);
   };
 
@@ -1689,11 +1700,38 @@ export default function App() {
             <div style={{ fontSize: 11, fontWeight: 800, color: A, letterSpacing: 2, marginBottom: 6 }}>✨ MYPIECE</div>
             <div style={{ fontSize: 13, lineHeight: 1.65, color: "#444" }}>{t("manifesto")}</div>
           </div>
-          <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 24 }}>{t("nickTitle")}</h2>
-          <input style={iB} placeholder={t("nickPh")} value={nick}
+          <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 20 }}>{t("nickTitle")}</h2>
+          <input style={{ ...iB, marginBottom: 14 }} placeholder={t("nickPh")} value={nick}
             onChange={e => setNick(e.target.value)} maxLength={10} />
-          <div style={{ height: 20 }} />
-          <button style={btnStyle(nick.length >= 2)} onClick={() => nick.length >= 2 && setStep(1)}>
+
+          {/* 성별 선택 */}
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>성별</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {[{ v: "F", l: "👩 여성" }, { v: "M", l: "👨 남성" }].map(o => (
+              <button key={o.v} onClick={() => setSignupGender(o.v)} style={{
+                flex: 1, padding: "12px 0", borderRadius: 12,
+                border: `1px solid ${signupGender === o.v ? A : BD}`,
+                background: signupGender === o.v ? A + "18" : SF,
+                color: signupGender === o.v ? A : "#888",
+                fontSize: 14, fontWeight: 600, cursor: "pointer"
+              }}>{o.l}</button>
+            ))}
+          </div>
+
+          {/* 나이 */}
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>나이</div>
+          <input style={{ ...iB, marginBottom: 14 }} type="number" min="19" max="99"
+            placeholder="만 나이 입력 (19세 이상)"
+            value={signupAge} onChange={e => setSignupAge(e.target.value)} />
+
+          {/* 자기소개 */}
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>자기소개 <span style={{ color: "#aaa", fontSize: 11 }}>(선택)</span></div>
+          <textarea style={{ ...iB, height: 80, resize: "none", marginBottom: 20, fontFamily: "inherit" }}
+            placeholder="나를 한 문장으로 소개해보세요"
+            value={signupBio} onChange={e => setSignupBio(e.target.value)} maxLength={100} />
+
+          <button style={btnStyle(nick.length >= 2 && signupGender && Number(signupAge) >= 19)}
+            onClick={() => nick.length >= 2 && signupGender && Number(signupAge) >= 19 && setStep(1)}>
             {t("next")}
           </button>
         </div>
@@ -2046,7 +2084,7 @@ export default function App() {
                 <div ref={chatEnd} />
               </div>
               <div style={{ padding: "8px 12px", display: "flex", gap: 6, alignItems: "center", borderTop: `1px solid ${BD}`, background: SF }}>
-                <input style={{ flex: 1, padding: "10px 16px", borderRadius: 20, background: "#0d0d0d", border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 13, outline: "none" }}
+                <input style={{ flex: 1, padding: "10px 16px", borderRadius: 20, background: SF, border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 13, outline: "none" }}
                   placeholder={t("msgPh")} value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} />
                 <button onClick={sendMsg} style={{ width: 38, height: 38, borderRadius: "50%", background: inp.trim() ? `linear-gradient(135deg,${A},${AD})` : SL, border: "none", color: "#fff", fontSize: 17, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>🚀</button>
               </div>
@@ -2276,7 +2314,7 @@ export default function App() {
 
       <div style={{ padding: "10px 14px", display: "flex", gap: 8, alignItems: "center", borderTop: `1px solid ${BD}`, background: SF }}>
         <input
-          style={{ flex: 1, padding: "12px 18px", borderRadius: 24, background: "#0d0d0d", border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 14, outline: "none" }}
+          style={{ flex: 1, padding: "12px 18px", borderRadius: 24, background: SF, border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 14, outline: "none" }}
           placeholder={t("msgPh")}
           value={inp}
           onChange={e => setInp(e.target.value)}
@@ -2501,7 +2539,7 @@ export default function App() {
           <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>{user?.nickname || "User"}</h2>
           {user?.verified && <div style={{ fontSize: 12, color: A, marginTop: 4 }}>⭐ {(user.vParts || []).map(i => P()[i]).join(", ")} {t("verified")}</div>}
         </div>
-        <button onClick={() => { setEditMode(true); setEditNick(user?.nickname || ""); setEditMyP(user?.myPieces || []); setEditIntP(user?.intPieces || []); }}
+        <button onClick={() => { setEditMode(true); setEditNick(user?.nickname || ""); setEditMyP(user?.myPieces || []); setEditIntP(user?.intPieces || []); setEditAge(user?.age ? String(user.age) : ""); setEditGender(user?.gender || ""); setEditBio(user?.bio || ""); }}
           style={{ position: "absolute", right: 28, top: 60, background: SL, border: `1px solid ${BD}`, borderRadius: 10, padding: "6px 14px", color: "#888", fontSize: 13, cursor: "pointer" }}>
           수정
         </button>
@@ -2510,7 +2548,28 @@ export default function App() {
       {editMode ? (
         <div style={{ background: SF, borderRadius: 16, padding: 20, marginBottom: 16 }}>
           <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>닉네임</div>
-          <input style={{ ...iB, marginBottom: 16 }} value={editNick} onChange={e => setEditNick(e.target.value)} maxLength={10} placeholder="닉네임 (2~10자)" />
+          <input style={{ ...iB, marginBottom: 14 }} value={editNick} onChange={e => setEditNick(e.target.value)} maxLength={10} placeholder="닉네임 (2~10자)" />
+
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>성별</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {[{ v: "F", l: "👩 여성" }, { v: "M", l: "👨 남성" }].map(o => (
+              <button key={o.v} onClick={() => setEditGender(o.v)} style={{
+                flex: 1, padding: "10px 0", borderRadius: 10,
+                border: `1px solid ${editGender === o.v ? A : BD}`,
+                background: editGender === o.v ? A + "18" : "transparent",
+                color: editGender === o.v ? A : "#888", fontSize: 13, fontWeight: 600, cursor: "pointer"
+              }}>{o.l}</button>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>나이</div>
+          <input style={{ ...iB, marginBottom: 14 }} type="number" min="19" max="99"
+            placeholder="만 나이" value={editAge} onChange={e => setEditAge(e.target.value)} />
+
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>자기소개</div>
+          <textarea style={{ ...iB, height: 72, resize: "none", marginBottom: 16, fontFamily: "inherit" }}
+            placeholder="나를 한 문장으로 소개해보세요" value={editBio}
+            onChange={e => setEditBio(e.target.value)} maxLength={100} />
 
           <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>✨ 자신있는 피스 (최대 3개)</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
