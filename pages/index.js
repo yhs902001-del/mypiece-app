@@ -667,6 +667,8 @@ export default function App() {
   const [matchUser, setMatchUser] = useState(null);
   const [toast, setToast] = useState("");
   const [swpI, setSwpI] = useState(0);
+  const [dragX, setDragX] = useState(0);
+  const dragStartX = useRef(null);
   const [typing, setTyping] = useState(false);
   const [repT, setRepT] = useState(null);
   const [repR, setRepR] = useState("");
@@ -1881,10 +1883,26 @@ export default function App() {
             </div>
           )}
           {m && (
-            <div style={{
-              background: `linear-gradient(160deg,${SF},${SL})`,
-              borderRadius: 24, border: `1px solid ${BD}`, overflow: "hidden"
-            }}>
+            <div
+              onTouchStart={e => { dragStartX.current = e.touches[0].clientX; setDragX(0); }}
+              onTouchMove={e => { if (dragStartX.current !== null) setDragX(e.touches[0].clientX - dragStartX.current); }}
+              onTouchEnd={() => {
+                const dx = dragX;
+                dragStartX.current = null;
+                setDragX(0);
+                if (dx > 80) handleLike(m);
+                else if (dx < -80) setSwpI(i => i + 1);
+              }}
+              style={{
+                background: `linear-gradient(160deg,${SF},${SL})`,
+                borderRadius: 24, border: `1px solid ${BD}`, overflow: "hidden",
+                transform: dragX !== 0 ? `translateX(${dragX * 0.4}px) rotate(${dragX * 0.04}deg)` : "none",
+                transition: dragX !== 0 ? "none" : "transform 0.3s ease",
+                userSelect: "none",
+                position: "relative",
+              }}>
+              {dragX > 40 && <div style={{ position:"absolute", top:16, left:16, zIndex:10, background:"#4ade80cc", borderRadius:10, padding:"6px 14px", fontSize:15, fontWeight:800, color:"#fff", pointerEvents:"none" }}>❤️ LIKE</div>}
+              {dragX < -40 && <div style={{ position:"absolute", top:16, right:16, zIndex:10, background:"#ff444488", borderRadius:10, padding:"6px 14px", fontSize:15, fontWeight:800, color:"#fff", pointerEvents:"none" }}>👋 PASS</div>}
               <div style={{
                 height: 260, background: `linear-gradient(160deg,${A}15,${AD}30)`,
                 display: "flex", alignItems: "center", justifyContent: "center", position: "relative"
