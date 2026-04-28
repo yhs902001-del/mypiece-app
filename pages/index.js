@@ -669,6 +669,7 @@ export default function App() {
   const [swpI, setSwpI] = useState(0);
   const [dragX, setDragX] = useState(0);
   const dragStartX = useRef(null);
+  const dragXRef = useRef(0);
   const [typing, setTyping] = useState(false);
   const [repT, setRepT] = useState(null);
   const [repR, setRepR] = useState("");
@@ -1884,11 +1885,17 @@ export default function App() {
           )}
           {m && (
             <div
-              onTouchStart={e => { dragStartX.current = e.touches[0].clientX; setDragX(0); }}
-              onTouchMove={e => { if (dragStartX.current !== null) setDragX(e.touches[0].clientX - dragStartX.current); }}
+              onTouchStart={e => { dragStartX.current = e.touches[0].clientX; dragXRef.current = 0; setDragX(0); }}
+              onTouchMove={e => {
+                if (dragStartX.current === null) return;
+                const dx = e.touches[0].clientX - dragStartX.current;
+                dragXRef.current = dx;
+                setDragX(dx);
+              }}
               onTouchEnd={() => {
-                const dx = dragX;
+                const dx = dragXRef.current;
                 dragStartX.current = null;
+                dragXRef.current = 0;
                 setDragX(0);
                 if (dx > 80) handleLike(m);
                 else if (dx < -80) setSwpI(i => i + 1);
