@@ -11,9 +11,9 @@ const CONTENT = {
       {
         h: "1. 수집하는 개인정보 항목",
         b: [
-          "필수: 이메일, 비밀번호(암호화 저장), 닉네임, 만 19세 이상 여부, 프로필 사진(인증용), 자신있는 피스 / 관심있는 피스 선택값",
+          "필수: 이메일, 비밀번호(암호화 저장), 닉네임, 만 나이, 성별, 만 19세 이상 여부, 프로필 사진(인증용), 자신있는 피스 / 관심있는 피스 선택값",
           "자동 수집: 접속 로그, 기기 정보(브라우저 종류, OS), FCM 푸시 토큰(푸시 알림 동의 시), 쿠키",
-          "선택: 성별, 지역, 자기소개 등 이용자가 직접 프로필에 입력한 정보",
+          "선택: 자기소개, 지역 등 이용자가 직접 프로필에 입력한 정보",
         ],
       },
       {
@@ -110,9 +110,9 @@ const CONTENT = {
       {
         h: "1. Information We Collect",
         b: [
-          "Required: Email, password (stored hashed), nickname, age 19+ confirmation, profile photos (for verification), selected pieces and interests",
+          "Required: Email, password (stored hashed), nickname, age (numeric), gender, age 19+ confirmation, profile photos (for verification), selected pieces and interests",
           "Automatically collected: access logs, device info (browser, OS), FCM push tokens (if permitted), cookies",
-          "Optional: gender, region, bio, and other profile details you provide",
+          "Optional: bio, region, and other profile details you provide",
         ],
       },
       {
