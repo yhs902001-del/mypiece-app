@@ -697,6 +697,7 @@ export default function App() {
   const [editAge, setEditAge] = useState("");
   const [editGender, setEditGender] = useState("");
   const [editBio, setEditBio] = useState("");
+  const [debug, setDebug] = useState({ rawKeys: [], err: "", lastFire: "", profileFails: [] });
   const [notifOn, setNotifOn] = useState(true);
   const [photoURLs, setPhotoURLs] = useState({});
   const [uploading, setUploading] = useState({});
@@ -841,35 +842,43 @@ export default function App() {
     let isFirstSnapshot = true;
     const matchRef = ref(db, `${DB_MATCHES}/${authUser.uid}`);
     const unsub = onValue(matchRef, async (snap) => {
-      const data = snap.exists() ? snap.val() : {};
-      const keys = Object.keys(data);
+      const t0 = new Date().toLocaleTimeString();
+      try {
+        const data = snap.exists() ? snap.val() : {};
+        const keys = Object.keys(data);
+        const profileFails = [];
 
-      // 모든 매치 프로필 로드
-      const cards = await Promise.all(
-        keys.map(async k => {
-          try {
-            const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
-            if (!pSnap.exists()) return null;
-            return profileToCard(k, pSnap.val(), myP, intP);
-          } catch { return null; }
-        })
-      );
-      const validCards = cards.filter(Boolean);
+        // 모든 매치 프로필 로드
+        const cards = await Promise.all(
+          keys.map(async k => {
+            try {
+              const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
+              if (!pSnap.exists()) { profileFails.push(`${k.slice(0,8)}:없음`); return null; }
+              const pData = pSnap.val();
+              if (!pData.nickname) { profileFails.push(`${k.slice(0,8)}:닉네임X`); return null; }
+              return profileToCard(k, pData, myP, intP);
+            } catch (e) { profileFails.push(`${k.slice(0,8)}:${e.message}`); return null; }
+          })
+        );
+        const validCards = cards.filter(Boolean);
 
-      // matches state를 DB와 정확히 일치하도록 갱신
-      setMatches(validCards);
+        setMatches(validCards);
+        setDebug({ rawKeys: keys, err: "", lastFire: t0, profileFails });
 
-      // 첫 스냅샷이 아닌 경우에만 신규 매치 모달 표시
-      if (!isFirstSnapshot) {
-        const newCard = validCards.find(c => !matchesSeenRef.current.has(c.id));
-        if (newCard) {
-          setMatchUser(newCard);
-          setShowMatch(true);
+        if (!isFirstSnapshot) {
+          const newCard = validCards.find(c => !matchesSeenRef.current.has(c.id));
+          if (newCard) {
+            setMatchUser(newCard);
+            setShowMatch(true);
+          }
         }
+        matchesSeenRef.current = new Set(validCards.map(c => c.id));
+        isFirstSnapshot = false;
+      } catch (e) {
+        setDebug({ rawKeys: [], err: e.message, lastFire: t0, profileFails: [] });
       }
-      // 본 매치 ID 갱신
-      matchesSeenRef.current = new Set(validCards.map(c => c.id));
-      isFirstSnapshot = false;
+    }, (err) => {
+      setDebug({ rawKeys: [], err: `READ권한실패: ${err.message}`, lastFire: new Date().toLocaleTimeString(), profileFails: [] });
     });
     return () => unsub();
   }, [authUser, myP, intP]);
@@ -2029,6 +2038,17 @@ export default function App() {
       <div style={{ padding: "20px 24px 12px" }}>
         <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>💌 {t("chat")}</h2>
         <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{matches.length}개의 매치</p>
+      </div>
+
+      {/* === 진단 패널 (임시) === */}
+      <div style={{ margin: "0 24px 14px", padding: "10px 12px", background: "#fff8e7", border: "1px solid #f0c060", borderRadius: 10, fontSize: 11, color: "#333", lineHeight: 1.5, fontFamily: "monospace" }}>
+        <div><b>🔍 진단 패널</b></div>
+        <div>내 UID: {(authUser?.uid || "없음").slice(0, 12)}...</div>
+        <div>리스너 마지막 호출: {debug.lastFire || "❌호출 안됨"}</div>
+        <div>Firebase matches/내UID 키 ({debug.rawKeys.length}개): {debug.rawKeys.length === 0 ? "[비어있음]" : debug.rawKeys.map(k => k.slice(0, 8)).join(", ")}</div>
+        <div>matches state: {matches.length}개</div>
+        {debug.profileFails.length > 0 && <div style={{ color: "#d04a00" }}>프로필 실패: {debug.profileFails.join(" | ")}</div>}
+        {debug.err && <div style={{ color: "#c00", fontWeight: 700 }}>에러: {debug.err}</div>}
       </div>
       <div style={{ padding: "0 24px" }}>
         {matches.length === 0 ? (
