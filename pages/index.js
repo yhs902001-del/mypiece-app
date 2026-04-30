@@ -697,7 +697,9 @@ export default function App() {
   const [editAge, setEditAge] = useState("");
   const [editGender, setEditGender] = useState("");
   const [editBio, setEditBio] = useState("");
-  const [debug, setDebug] = useState({ rawKeys: [], err: "", lastFire: "", profileFails: [] });
+  const [debug, setDebug] = useState({ rawKeys: [], err: "", lastFire: "", profileFails: [], effectRuns: 0, hasAuth: false });
+  const myPRef = useRef([]);
+  const intPRef = useRef([]);
   const [notifOn, setNotifOn] = useState(true);
   const [photoURLs, setPhotoURLs] = useState({});
   const [uploading, setUploading] = useState({});
@@ -835,9 +837,13 @@ export default function App() {
     return () => unsub();
   }, [chatU, authUser]);
 
-  // Firebase 매치 실시간 동기화 — matches state를 항상 DB와 일치시키고
-  // 새 매치가 들어오면 MatchModal 표시
+  // myP/intP를 ref에 동기화 (effect 의존성에서 빼기 위해)
+  useEffect(() => { myPRef.current = myP; }, [myP]);
+  useEffect(() => { intPRef.current = intP; }, [intP]);
+
+  // Firebase 매치 실시간 동기화
   useEffect(() => {
+    setDebug(d => ({ ...d, effectRuns: d.effectRuns + 1, hasAuth: !!authUser }));
     if (!authUser) return;
     let isFirstSnapshot = true;
     const matchRef = ref(db, `${DB_MATCHES}/${authUser.uid}`);
@@ -848,7 +854,6 @@ export default function App() {
         const keys = Object.keys(data);
         const profileFails = [];
 
-        // 모든 매치 프로필 로드
         const cards = await Promise.all(
           keys.map(async k => {
             try {
@@ -856,32 +861,29 @@ export default function App() {
               if (!pSnap.exists()) { profileFails.push(`${k.slice(0,8)}:없음`); return null; }
               const pData = pSnap.val();
               if (!pData.nickname) { profileFails.push(`${k.slice(0,8)}:닉네임X`); return null; }
-              return profileToCard(k, pData, myP, intP);
+              return profileToCard(k, pData, myPRef.current, intPRef.current);
             } catch (e) { profileFails.push(`${k.slice(0,8)}:${e.message}`); return null; }
           })
         );
         const validCards = cards.filter(Boolean);
 
         setMatches(validCards);
-        setDebug({ rawKeys: keys, err: "", lastFire: t0, profileFails });
+        setDebug(d => ({ ...d, rawKeys: keys, err: "", lastFire: t0, profileFails }));
 
         if (!isFirstSnapshot) {
           const newCard = validCards.find(c => !matchesSeenRef.current.has(c.id));
-          if (newCard) {
-            setMatchUser(newCard);
-            setShowMatch(true);
-          }
+          if (newCard) { setMatchUser(newCard); setShowMatch(true); }
         }
         matchesSeenRef.current = new Set(validCards.map(c => c.id));
         isFirstSnapshot = false;
       } catch (e) {
-        setDebug({ rawKeys: [], err: e.message, lastFire: t0, profileFails: [] });
+        setDebug(d => ({ ...d, err: e.message, lastFire: t0 }));
       }
     }, (err) => {
-      setDebug({ rawKeys: [], err: `READ권한실패: ${err.message}`, lastFire: new Date().toLocaleTimeString(), profileFails: [] });
+      setDebug(d => ({ ...d, err: `READ권한실패: ${err.message}`, lastFire: new Date().toLocaleTimeString() }));
     });
     return () => unsub();
-  }, [authUser, myP, intP]);
+  }, [authUser]);
 
   const go = (s) => { setHist(h => [...h, scr]); setScr(s); };
   const back = () => { const h = [...hist]; const l = h.pop() || SC.HOME; setHist(h); setScr(l); };
@@ -2043,12 +2045,26 @@ export default function App() {
       {/* === 진단 패널 (임시) === */}
       <div style={{ margin: "0 24px 14px", padding: "10px 12px", background: "#fff8e7", border: "1px solid #f0c060", borderRadius: 10, fontSize: 11, color: "#333", lineHeight: 1.5, fontFamily: "monospace" }}>
         <div><b>🔍 진단 패널</b></div>
-        <div>내 UID: {(authUser?.uid || "없음").slice(0, 12)}...</div>
+        <div>내 UID: {(authUser?.uid || "❌없음").slice(0, 16)}</div>
+        <div>effect 실행 횟수: {debug.effectRuns} / hasAuth: {String(debug.hasAuth)}</div>
         <div>리스너 마지막 호출: {debug.lastFire || "❌호출 안됨"}</div>
-        <div>Firebase matches/내UID 키 ({debug.rawKeys.length}개): {debug.rawKeys.length === 0 ? "[비어있음]" : debug.rawKeys.map(k => k.slice(0, 8)).join(", ")}</div>
+        <div>Firebase matches 키 ({debug.rawKeys.length}개): {debug.rawKeys.length === 0 ? "[비어있음]" : debug.rawKeys.map(k => k.slice(0, 8)).join(", ")}</div>
         <div>matches state: {matches.length}개</div>
         {debug.profileFails.length > 0 && <div style={{ color: "#d04a00" }}>프로필 실패: {debug.profileFails.join(" | ")}</div>}
         {debug.err && <div style={{ color: "#c00", fontWeight: 700 }}>에러: {debug.err}</div>}
+        <button onClick={async () => {
+          if (!authUser) { setDebug(d => ({ ...d, err: "수동조회: authUser 없음" })); return; }
+          try {
+            const snap = await get(ref(db, `${DB_MATCHES}/${authUser.uid}`));
+            const exists = snap.exists();
+            const val = exists ? snap.val() : null;
+            setDebug(d => ({ ...d, err: `수동조회: exists=${exists} val=${JSON.stringify(val)}`.slice(0, 200) }));
+          } catch (e) {
+            setDebug(d => ({ ...d, err: `수동조회실패: ${e.message}` }));
+          }
+        }} style={{ marginTop: 6, padding: "4px 10px", borderRadius: 6, background: "#fff", border: "1px solid #c08040", fontSize: 10, cursor: "pointer" }}>
+          🔄 수동으로 matches 조회
+        </button>
       </div>
       <div style={{ padding: "0 24px" }}>
         {matches.length === 0 ? (
