@@ -698,6 +698,7 @@ export default function App() {
   const [editGender, setEditGender] = useState("");
   const [editBio, setEditBio] = useState("");
   const [debug, setDebug] = useState({ rawKeys: [], err: "", lastFire: "", profileFails: [], effectRuns: 0, hasAuth: false });
+  const [chatPartners, setChatPartners] = useState([]);
   const myPRef = useRef([]);
   const intPRef = useRef([]);
   const [notifOn, setNotifOn] = useState(true);
@@ -840,6 +841,45 @@ export default function App() {
   // myP/intP를 ref에 동기화 (effect 의존성에서 빼기 위해)
   useEffect(() => { myPRef.current = myP; }, [myP]);
   useEffect(() => { intPRef.current = intP; }, [intP]);
+
+  // 채팅 상대 실시간 동기화 (chats/ 전체를 스캔해 내 UID가 포함된 chatId 추출)
+  useEffect(() => {
+    if (!authUser) return;
+    const chatsRef = ref(db, DB_CHATS);
+    const unsub = onValue(chatsRef, async (snap) => {
+      if (!snap.exists()) { setChatPartners([]); return; }
+      const allChats = snap.val();
+      const myUid = authUser.uid;
+      const partnersMap = {};
+      for (const [chatId, msgs] of Object.entries(allChats)) {
+        const ids = chatId.split("_");
+        if (!ids.includes(myUid)) continue;
+        const otherUid = ids.find(uid => uid !== myUid);
+        if (!otherUid) continue;
+        const msgArr = Object.values(msgs || {});
+        const last = msgArr.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+        partnersMap[otherUid] = { lastTs: last?.ts || 0, lastText: last?.text || "" };
+      }
+      const otherUids = Object.keys(partnersMap);
+      const cards = await Promise.all(otherUids.map(async k => {
+        try {
+          const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
+          if (!pSnap.exists()) return null;
+          const pData = pSnap.val();
+          if (!pData.nickname) return null;
+          const card = profileToCard(k, pData, myPRef.current, intPRef.current);
+          if (card) {
+            card.lm = partnersMap[k].lastText;
+            card.lastTs = partnersMap[k].lastTs;
+          }
+          return card;
+        } catch { return null; }
+      }));
+      const valid = cards.filter(Boolean).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+      setChatPartners(valid);
+    });
+    return () => unsub();
+  }, [authUser]);
 
   // Firebase 매치 실시간 동기화
   useEffect(() => {
@@ -2033,76 +2073,63 @@ export default function App() {
   }
 
   // ═══ 채팅 목록 ═══
-  if (scr === SC.CHATLIST) return (
-    <div style={{ ...base, paddingBottom: 72 }}>
-      <Head><title>MyPiece - Chat</title></Head>
-      <Toast />
-      <div style={{ padding: "20px 24px 12px" }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>💌 {t("chat")}</h2>
-        <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{matches.length}개의 매치</p>
-      </div>
-
-      {/* === 진단 패널 (임시) === */}
-      <div style={{ margin: "0 24px 14px", padding: "10px 12px", background: "#fff8e7", border: "1px solid #f0c060", borderRadius: 10, fontSize: 11, color: "#333", lineHeight: 1.5, fontFamily: "monospace" }}>
-        <div><b>🔍 진단 패널</b></div>
-        <div>내 UID: {(authUser?.uid || "❌없음").slice(0, 16)}</div>
-        <div>effect 실행 횟수: {debug.effectRuns} / hasAuth: {String(debug.hasAuth)}</div>
-        <div>리스너 마지막 호출: {debug.lastFire || "❌호출 안됨"}</div>
-        <div>Firebase matches 키 ({debug.rawKeys.length}개): {debug.rawKeys.length === 0 ? "[비어있음]" : debug.rawKeys.map(k => k.slice(0, 8)).join(", ")}</div>
-        <div>matches state: {matches.length}개</div>
-        {debug.profileFails.length > 0 && <div style={{ color: "#d04a00" }}>프로필 실패: {debug.profileFails.join(" | ")}</div>}
-        {debug.err && <div style={{ color: "#c00", fontWeight: 700 }}>에러: {debug.err}</div>}
-        <button onClick={async () => {
-          if (!authUser) { setDebug(d => ({ ...d, err: "수동조회: authUser 없음" })); return; }
-          try {
-            const snap = await get(ref(db, `${DB_MATCHES}/${authUser.uid}`));
-            const exists = snap.exists();
-            const val = exists ? snap.val() : null;
-            setDebug(d => ({ ...d, err: `수동조회: exists=${exists} val=${JSON.stringify(val)}`.slice(0, 200) }));
-          } catch (e) {
-            setDebug(d => ({ ...d, err: `수동조회실패: ${e.message}` }));
-          }
-        }} style={{ marginTop: 6, padding: "4px 10px", borderRadius: 6, background: "#fff", border: "1px solid #c08040", fontSize: 10, cursor: "pointer" }}>
-          🔄 수동으로 matches 조회
-        </button>
-      </div>
-      <div style={{ padding: "0 24px" }}>
-        {matches.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "60px 0" }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>💌</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#444", marginBottom: 8 }}>아직 매치가 없어요</div>
-            <div style={{ fontSize: 13, color: "#888" }}>홈에서 스와이프하고 서로 좋아요하면 채팅이 열려요 ✨</div>
-          </div>
-        ) : (
-          matches.map(u => (
-            <div key={u.id} onClick={() => openChat(u)} style={{
-              display: "flex", alignItems: "center", gap: 14,
-              padding: "14px 0", borderBottom: `1px solid ${BD}`, cursor: "pointer"
-            }}>
-              <div style={{
-                width: 52, height: 52, borderRadius: "50%",
-                background: `linear-gradient(135deg,${A},${AD})`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 20, fontWeight: 700, color: "#fff", flexShrink: 0
-              }}>{u.name[0]}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontWeight: 700, fontSize: 15 }}>
-                    {u.name}{u.badge && <span style={{ fontSize: 11, marginLeft: 4 }}>⭐</span>}
-                  </span>
-                  <span style={{ fontSize: 11, color: A, fontWeight: 700 }}>{u.pct}%</span>
-                </div>
-                <div style={{ fontSize: 13, color: "#888", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {u.lm || "👋 대화를 시작해보세요"}
-                </div>
-              </div>
+  if (scr === SC.CHATLIST) {
+    // chatPartners(실제 대화한 사람) + matches(매치만 된 사람) 합치되 중복 제거
+    const partnerIds = new Set(chatPartners.map(p => p.id));
+    const matchOnly = matches.filter(m => !partnerIds.has(m.id));
+    const allList = [...chatPartners, ...matchOnly];
+    return (
+      <div style={{ ...base, paddingBottom: 72 }}>
+        <Head><title>MyPiece - Chat</title></Head>
+        <Toast />
+        <div style={{ padding: "20px 24px 12px" }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>💌 {t("chat")}</h2>
+          <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+            {chatPartners.length}개 대화 · {matches.length}개 매치
+          </p>
+        </div>
+        <div style={{ padding: "0 24px" }}>
+          {allList.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>💌</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#444", marginBottom: 8 }}>아직 대화가 없어요</div>
+              <div style={{ fontSize: 13, color: "#888" }}>홈에서 누군가에게 💌를 보내거나 매치되면 여기 표시돼요 ✨</div>
             </div>
-          ))
-        )}
+          ) : (
+            allList.map(u => {
+              const isChat = partnerIds.has(u.id);
+              return (
+                <div key={u.id} onClick={() => openChat(u)} style={{
+                  display: "flex", alignItems: "center", gap: 14,
+                  padding: "14px 0", borderBottom: `1px solid ${BD}`, cursor: "pointer"
+                }}>
+                  <div style={{
+                    width: 52, height: 52, borderRadius: "50%",
+                    background: `linear-gradient(135deg,${A},${AD})`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 20, fontWeight: 700, color: "#fff", flexShrink: 0
+                  }}>{u.name[0]}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: 700, fontSize: 15 }}>
+                        {u.name}{u.badge && <span style={{ fontSize: 11, marginLeft: 4 }}>⭐</span>}
+                        {!isChat && <span style={{ fontSize: 9, marginLeft: 6, padding: "2px 6px", borderRadius: 6, background: A+"22", color: A, fontWeight: 700 }}>NEW</span>}
+                      </span>
+                      <span style={{ fontSize: 11, color: A, fontWeight: 700 }}>{u.pct}%</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: "#888", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {u.lm || "👋 대화를 시작해보세요"}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <Nav />
       </div>
-      <Nav />
-    </div>
-  );
+    );
+  }
 
   // ═══ 채팅 ═══
   if (scr === SC.CHAT && chatU) return (
