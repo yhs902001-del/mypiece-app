@@ -698,7 +698,6 @@ export default function App() {
   const [editAge, setEditAge] = useState("");
   const [editGender, setEditGender] = useState("");
   const [editBio, setEditBio] = useState("");
-  const [debug, setDebug] = useState({ rawKeys: [], err: "", lastFire: "", profileFails: [], effectRuns: 0, hasAuth: false });
   const [chatPartners, setChatPartners] = useState([]);
   const myPRef = useRef([]);
   const intPRef = useRef([]);
@@ -882,44 +881,31 @@ export default function App() {
 
   // Firebase 매치 실시간 동기화
   useEffect(() => {
-    setDebug(d => ({ ...d, effectRuns: d.effectRuns + 1, hasAuth: !!authUser }));
     if (!authUser) return;
     let isFirstSnapshot = true;
     const matchRef = ref(db, `${DB_MATCHES}/${authUser.uid}`);
     const unsub = onValue(matchRef, async (snap) => {
-      const t0 = new Date().toLocaleTimeString();
-      try {
-        const data = snap.exists() ? snap.val() : {};
-        const keys = Object.keys(data);
-        const profileFails = [];
-
-        const cards = await Promise.all(
-          keys.map(async k => {
-            try {
-              const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
-              if (!pSnap.exists()) { profileFails.push(`${k.slice(0,8)}:없음`); return null; }
-              const pData = pSnap.val();
-              if (!pData.nickname) { profileFails.push(`${k.slice(0,8)}:닉네임X`); return null; }
-              return profileToCard(k, pData, myPRef.current, intPRef.current);
-            } catch (e) { profileFails.push(`${k.slice(0,8)}:${e.message}`); return null; }
-          })
-        );
-        const validCards = cards.filter(Boolean);
-
-        setMatches(validCards);
-        setDebug(d => ({ ...d, rawKeys: keys, err: "", lastFire: t0, profileFails }));
-
-        if (!isFirstSnapshot) {
-          const newCard = validCards.find(c => !matchesSeenRef.current.has(c.id));
-          if (newCard) { setMatchUser(newCard); setShowMatch(true); }
-        }
-        matchesSeenRef.current = new Set(validCards.map(c => c.id));
-        isFirstSnapshot = false;
-      } catch (e) {
-        setDebug(d => ({ ...d, err: e.message, lastFire: t0 }));
+      const data = snap.exists() ? snap.val() : {};
+      const keys = Object.keys(data);
+      const cards = await Promise.all(
+        keys.map(async k => {
+          try {
+            const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
+            if (!pSnap.exists()) return null;
+            const pData = pSnap.val();
+            if (!pData.nickname) return null;
+            return profileToCard(k, pData, myPRef.current, intPRef.current);
+          } catch { return null; }
+        })
+      );
+      const validCards = cards.filter(Boolean);
+      setMatches(validCards);
+      if (!isFirstSnapshot) {
+        const newCard = validCards.find(c => !matchesSeenRef.current.has(c.id));
+        if (newCard) { setMatchUser(newCard); setShowMatch(true); }
       }
-    }, (err) => {
-      setDebug(d => ({ ...d, err: `READ권한실패: ${err.message}`, lastFire: new Date().toLocaleTimeString() }));
+      matchesSeenRef.current = new Set(validCards.map(c => c.id));
+      isFirstSnapshot = false;
     });
     return () => unsub();
   }, [authUser]);
@@ -2097,45 +2083,6 @@ export default function App() {
           </p>
         </div>
 
-        {/* === 진단 패널 (임시) === */}
-        <div style={{ margin: "0 24px 14px", padding: "10px 12px", background: "#fff8e7", border: "1px solid #f0c060", borderRadius: 10, fontSize: 11, color: "#333", lineHeight: 1.6, fontFamily: "monospace" }}>
-          <div><b>🔍 userChats 진단</b></div>
-          <div>내 UID: {(authUser?.uid || "❌").slice(0, 16)}</div>
-          <div>chatPartners state: {chatPartners.length}개</div>
-          {debug.err && <div style={{ color: "#c00", fontWeight: 700, wordBreak: "break-all" }}>결과: {debug.err}</div>}
-          <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
-            <button onClick={async () => {
-              if (!authUser) return;
-              try {
-                const snap = await get(ref(db, `${DB_USERCHATS}/${authUser.uid}`));
-                const exists = snap.exists();
-                const val = exists ? snap.val() : null;
-                setDebug(d => ({ ...d, err: `READ: exists=${exists} keys=${val ? Object.keys(val).length : 0} val=${JSON.stringify(val)}`.slice(0, 300) }));
-              } catch (e) { setDebug(d => ({ ...d, err: `READ실패: ${e.code || ""} ${e.message}` })); }
-            }} style={{ padding: "4px 8px", borderRadius: 6, background: "#fff", border: "1px solid #c08040", fontSize: 10, cursor: "pointer" }}>📖 userChats 읽기</button>
-            <button onClick={async () => {
-              if (!authUser) return;
-              try {
-                await set(ref(db, `${DB_USERCHATS}/${authUser.uid}/_test`), { lastTs: Date.now(), lastText: "테스트" });
-                setDebug(d => ({ ...d, err: "✅ WRITE 성공! Firebase Rules는 OK" }));
-              } catch (e) { setDebug(d => ({ ...d, err: `❌ WRITE실패(권한문제): ${e.code || ""} ${e.message}` })); }
-            }} style={{ padding: "4px 8px", borderRadius: 6, background: "#fff", border: "1px solid #c08040", fontSize: 10, cursor: "pointer" }}>✏️ 테스트 쓰기</button>
-            <button onClick={async () => {
-              if (!authUser) return;
-              try {
-                const snap = await get(ref(db, DB_CHATS));
-                const exists = snap.exists();
-                const val = exists ? snap.val() : null;
-                const myUid = authUser.uid;
-                let myChatIds = [];
-                if (val) {
-                  myChatIds = Object.keys(val).filter(id => id.includes(myUid));
-                }
-                setDebug(d => ({ ...d, err: `chats/ READ: exists=${exists} 전체키=${val ? Object.keys(val).length : 0}개 / 내가포함된 chatId=${myChatIds.length}개 (${myChatIds.slice(0,2).join(",")})`.slice(0, 300) }));
-              } catch (e) { setDebug(d => ({ ...d, err: `chats/ READ실패: ${e.code || ""} ${e.message}` })); }
-            }} style={{ padding: "4px 8px", borderRadius: 6, background: "#fff", border: "1px solid #c08040", fontSize: 10, cursor: "pointer" }}>🔍 chats/ 전체조회</button>
-          </div>
-        </div>
         <div style={{ padding: "0 24px" }}>
           {allList.length === 0 ? (
             <div style={{ textAlign: "center", padding: "60px 0" }}>
