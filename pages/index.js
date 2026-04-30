@@ -834,54 +834,42 @@ export default function App() {
     return () => unsub();
   }, [chatU, authUser]);
 
-  // 상대방이 나를 좋아요 하면서 매칭이 성사된 경우(내가 먼저 좋아요 누른 쪽)
-  // 실시간으로 감지해서 MatchModal 띄우기
+  // Firebase 매치 실시간 동기화 — matches state를 항상 DB와 일치시키고
+  // 새 매치가 들어오면 MatchModal 표시
   useEffect(() => {
     if (!authUser) return;
-    initialMatchesLoadedRef.current = false;
-    matchesSeenRef.current = new Set();
+    let isFirstSnapshot = true;
     const matchRef = ref(db, `${DB_MATCHES}/${authUser.uid}`);
     const unsub = onValue(matchRef, async (snap) => {
       const data = snap.exists() ? snap.val() : {};
       const keys = Object.keys(data);
-      if (!initialMatchesLoadedRef.current) {
-        matchesSeenRef.current = new Set(keys);
-        initialMatchesLoadedRef.current = true;
-        // 기존 매치 목록을 state에 반영 (모달은 띄우지 않음)
-        if (keys.length > 0) {
-          Promise.all(keys.map(async k => {
-            try {
-              const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
-              if (!pSnap.exists()) return null;
-              return profileToCard(k, pSnap.val(), myP, intP);
-            } catch { return null; }
-          })).then(cards => {
-            const valid = cards.filter(Boolean);
-            if (valid.length > 0) {
-              setMatches(p => {
-                const ids = new Set(p.map(x => x.id));
-                return [...p, ...valid.filter(c => !ids.has(c.id))];
-              });
-            }
-          });
-        }
-        return;
-      }
-      const newKeys = keys.filter(k => !matchesSeenRef.current.has(k));
-      for (const k of newKeys) {
-        matchesSeenRef.current.add(k);
-        try {
-          const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
-          if (!pSnap.exists()) continue;
-          const card = profileToCard(k, pSnap.val(), myP, intP);
-          if (!card) continue;
-          setMatches(p => p.some(x => x.id === k) ? p : [...p, card]);
-          setMatchUser(card);
+
+      // 모든 매치 프로필 로드
+      const cards = await Promise.all(
+        keys.map(async k => {
+          try {
+            const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
+            if (!pSnap.exists()) return null;
+            return profileToCard(k, pSnap.val(), myP, intP);
+          } catch { return null; }
+        })
+      );
+      const validCards = cards.filter(Boolean);
+
+      // matches state를 DB와 정확히 일치하도록 갱신
+      setMatches(validCards);
+
+      // 첫 스냅샷이 아닌 경우에만 신규 매치 모달 표시
+      if (!isFirstSnapshot) {
+        const newCard = validCards.find(c => !matchesSeenRef.current.has(c.id));
+        if (newCard) {
+          setMatchUser(newCard);
           setShowMatch(true);
-        } catch (e) {
-          console.warn("매치 프로필 로드 실패:", e.message);
         }
       }
+      // 본 매치 ID 갱신
+      matchesSeenRef.current = new Set(validCards.map(c => c.id));
+      isFirstSnapshot = false;
     });
     return () => unsub();
   }, [authUser, myP, intP]);
