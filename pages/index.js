@@ -641,6 +641,7 @@ const profileToCard = (uid, data, myMp = [], myIp = []) => {
 const SC = { SPLASH: 0, LANG: 1, AGE: 2, BLOCK: 3, LOGIN: 4, SIGNUP: 5, HOME: 6, CHAT: 7, PROFILE: 8, LOUNGE: 9, REPORT: 10, SETTINGS: 11, UPROF: 12, CHATLIST: 13 };
 const DB_USERS = "users";
 const DB_CHATS = "chats";
+const DB_USERCHATS = "userChats";
 const DB_LIKES = "likes";
 const DB_MATCHES = "matches";
 
@@ -823,16 +824,24 @@ export default function App() {
     }
   }, [toast]);
 
-  // Firebase 채팅 리스너
+  // Firebase 채팅 리스너 + 채팅 진입 시 userChats 인덱스 갱신
   useEffect(() => {
     if (!chatU || !authUser) return;
-    const chatId = [authUser.uid, chatU.uid || String(chatU.id)].sort().join("_");
+    const otherUid = chatU.uid || String(chatU.id);
+    const chatId = [authUser.uid, otherUid].sort().join("_");
     const msgsRef = ref(db, `${DB_CHATS}/${chatId}`);
     const unsub = onValue(msgsRef, (snap) => {
       if (snap.exists()) {
         const data = snap.val();
         const arr = Object.values(data).sort((a, b) => a.ts - b.ts);
         setMsgs(arr.map(m => ({ id: m.ts, from: m.uid === authUser.uid ? "me" : "them", text: m.text, time: m.time })));
+        // 기존 채팅 마이그레이션: 메시지가 있으면 내 인덱스에 등록
+        const last = arr[arr.length - 1];
+        if (last) {
+          set(ref(db, `${DB_USERCHATS}/${authUser.uid}/${otherUid}`), {
+            lastTs: last.ts, lastText: (last.text || "").slice(0, 80)
+          }).catch(() => {});
+        }
       }
     });
     return () => unsub();
@@ -842,25 +851,15 @@ export default function App() {
   useEffect(() => { myPRef.current = myP; }, [myP]);
   useEffect(() => { intPRef.current = intP; }, [intP]);
 
-  // 채팅 상대 실시간 동기화 (chats/ 전체를 스캔해 내 UID가 포함된 chatId 추출)
+  // 채팅 상대 실시간 동기화 — userChats/{내UID} 인덱스 구독
+  // (sendMsg에서 양쪽 인덱스를 갱신함)
   useEffect(() => {
     if (!authUser) return;
-    const chatsRef = ref(db, DB_CHATS);
-    const unsub = onValue(chatsRef, async (snap) => {
+    const idxRef = ref(db, `${DB_USERCHATS}/${authUser.uid}`);
+    const unsub = onValue(idxRef, async (snap) => {
       if (!snap.exists()) { setChatPartners([]); return; }
-      const allChats = snap.val();
-      const myUid = authUser.uid;
-      const partnersMap = {};
-      for (const [chatId, msgs] of Object.entries(allChats)) {
-        const ids = chatId.split("_");
-        if (!ids.includes(myUid)) continue;
-        const otherUid = ids.find(uid => uid !== myUid);
-        if (!otherUid) continue;
-        const msgArr = Object.values(msgs || {});
-        const last = msgArr.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
-        partnersMap[otherUid] = { lastTs: last?.ts || 0, lastText: last?.text || "" };
-      }
-      const otherUids = Object.keys(partnersMap);
+      const idx = snap.val();
+      const otherUids = Object.keys(idx);
       const cards = await Promise.all(otherUids.map(async k => {
         try {
           const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
@@ -868,16 +867,16 @@ export default function App() {
           const pData = pSnap.val();
           if (!pData.nickname) return null;
           const card = profileToCard(k, pData, myPRef.current, intPRef.current);
-          if (card) {
-            card.lm = partnersMap[k].lastText;
-            card.lastTs = partnersMap[k].lastTs;
+          if (card && idx[k]) {
+            card.lm = idx[k].lastText || "";
+            card.lastTs = idx[k].lastTs || 0;
           }
           return card;
         } catch { return null; }
       }));
       const valid = cards.filter(Boolean).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
       setChatPartners(valid);
-    });
+    }, () => setChatPartners([]));
     return () => unsub();
   }, [authUser]);
 
@@ -1115,8 +1114,17 @@ export default function App() {
     const msgData = { text: inp, uid: authUser?.uid || "guest", time: ts, ts: Date.now() };
 
     if (authUser && chatU) {
-      const chatId = [authUser.uid, chatU.uid || String(chatU.id)].sort().join("_");
+      const otherUid = chatU.uid || String(chatU.id);
+      const chatId = [authUser.uid, otherUid].sort().join("_");
       await push(ref(db, `${DB_CHATS}/${chatId}`), msgData);
+      // 양쪽 채팅 인덱스 갱신 (탭에 채팅 목록 표시용)
+      const meta = { lastTs: msgData.ts, lastText: inp.slice(0, 80) };
+      try {
+        await Promise.all([
+          set(ref(db, `${DB_USERCHATS}/${authUser.uid}/${otherUid}`), meta),
+          set(ref(db, `${DB_USERCHATS}/${otherUid}/${authUser.uid}`), meta),
+        ]);
+      } catch { /* 인덱스 실패해도 메시지는 전송됨 */ }
       if (chatU.uid) sendPush(chatU.uid, `${nick || "누군가"}가 메시지를 보냈어요`, inp.slice(0, 50));
     } else {
       setMsgs(p => [...p, { id: Date.now(), from: "me", text: inp, time: ts }]);
