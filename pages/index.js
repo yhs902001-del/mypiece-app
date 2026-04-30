@@ -847,6 +847,24 @@ export default function App() {
       if (!initialMatchesLoadedRef.current) {
         matchesSeenRef.current = new Set(keys);
         initialMatchesLoadedRef.current = true;
+        // 기존 매치 목록을 state에 반영 (모달은 띄우지 않음)
+        if (keys.length > 0) {
+          Promise.all(keys.map(async k => {
+            try {
+              const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
+              if (!pSnap.exists()) return null;
+              return profileToCard(k, pSnap.val(), myP, intP);
+            } catch { return null; }
+          })).then(cards => {
+            const valid = cards.filter(Boolean);
+            if (valid.length > 0) {
+              setMatches(p => {
+                const ids = new Set(p.map(x => x.id));
+                return [...p, ...valid.filter(c => !ids.has(c.id))];
+              });
+            }
+          });
+        }
         return;
       }
       const newKeys = keys.filter(k => !matchesSeenRef.current.has(k));
