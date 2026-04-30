@@ -2096,6 +2096,46 @@ export default function App() {
             {chatPartners.length}개 대화 · {matches.length}개 매치
           </p>
         </div>
+
+        {/* === 진단 패널 (임시) === */}
+        <div style={{ margin: "0 24px 14px", padding: "10px 12px", background: "#fff8e7", border: "1px solid #f0c060", borderRadius: 10, fontSize: 11, color: "#333", lineHeight: 1.6, fontFamily: "monospace" }}>
+          <div><b>🔍 userChats 진단</b></div>
+          <div>내 UID: {(authUser?.uid || "❌").slice(0, 16)}</div>
+          <div>chatPartners state: {chatPartners.length}개</div>
+          {debug.err && <div style={{ color: "#c00", fontWeight: 700, wordBreak: "break-all" }}>결과: {debug.err}</div>}
+          <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+            <button onClick={async () => {
+              if (!authUser) return;
+              try {
+                const snap = await get(ref(db, `${DB_USERCHATS}/${authUser.uid}`));
+                const exists = snap.exists();
+                const val = exists ? snap.val() : null;
+                setDebug(d => ({ ...d, err: `READ: exists=${exists} keys=${val ? Object.keys(val).length : 0} val=${JSON.stringify(val)}`.slice(0, 300) }));
+              } catch (e) { setDebug(d => ({ ...d, err: `READ실패: ${e.code || ""} ${e.message}` })); }
+            }} style={{ padding: "4px 8px", borderRadius: 6, background: "#fff", border: "1px solid #c08040", fontSize: 10, cursor: "pointer" }}>📖 userChats 읽기</button>
+            <button onClick={async () => {
+              if (!authUser) return;
+              try {
+                await set(ref(db, `${DB_USERCHATS}/${authUser.uid}/_test`), { lastTs: Date.now(), lastText: "테스트" });
+                setDebug(d => ({ ...d, err: "✅ WRITE 성공! Firebase Rules는 OK" }));
+              } catch (e) { setDebug(d => ({ ...d, err: `❌ WRITE실패(권한문제): ${e.code || ""} ${e.message}` })); }
+            }} style={{ padding: "4px 8px", borderRadius: 6, background: "#fff", border: "1px solid #c08040", fontSize: 10, cursor: "pointer" }}>✏️ 테스트 쓰기</button>
+            <button onClick={async () => {
+              if (!authUser) return;
+              try {
+                const snap = await get(ref(db, DB_CHATS));
+                const exists = snap.exists();
+                const val = exists ? snap.val() : null;
+                const myUid = authUser.uid;
+                let myChatIds = [];
+                if (val) {
+                  myChatIds = Object.keys(val).filter(id => id.includes(myUid));
+                }
+                setDebug(d => ({ ...d, err: `chats/ READ: exists=${exists} 전체키=${val ? Object.keys(val).length : 0}개 / 내가포함된 chatId=${myChatIds.length}개 (${myChatIds.slice(0,2).join(",")})`.slice(0, 300) }));
+              } catch (e) { setDebug(d => ({ ...d, err: `chats/ READ실패: ${e.code || ""} ${e.message}` })); }
+            }} style={{ padding: "4px 8px", borderRadius: 6, background: "#fff", border: "1px solid #c08040", fontSize: 10, cursor: "pointer" }}>🔍 chats/ 전체조회</button>
+          </div>
+        </div>
         <div style={{ padding: "0 24px" }}>
           {allList.length === 0 ? (
             <div style={{ textAlign: "center", padding: "60px 0" }}>
