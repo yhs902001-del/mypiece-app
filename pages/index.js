@@ -702,6 +702,7 @@ export default function App() {
   const [chatPartners, setChatPartners] = useState([]);
   const [receivedLikes, setReceivedLikes] = useState({}); // {likerUid: ts}
   const [lastVisit, setLastVisit] = useState({ home: 0, chat: 0 });
+  const [showChatMenu, setShowChatMenu] = useState(false);
   const myPRef = useRef([]);
   const intPRef = useRef([]);
   const [notifOn, setNotifOn] = useState(true);
@@ -2243,19 +2244,44 @@ export default function App() {
             </div>
           </div>
         </div>
-        <button onClick={() => {
-          const choice = window.prompt("1: 신고  /  2: 매치 해제 (좋아요 취소)\n원하는 번호를 입력하세요");
-          if (choice === "1") { setRepT(chatU); setRepDone(false); setRepR(""); go(SC.REPORT); }
-          else if (choice === "2") {
-            if (window.confirm(`${chatU.name}님과의 매치를 해제하시겠어요? 좋아요와 매치 기록이 삭제됩니다.`)) {
-              handleUnlike(chatU);
-              back();
-            }
-          }
-        }} style={{ background: SL, border: `1px solid ${BD}`, borderRadius: 10, padding: "6px 12px", color: "#555", fontSize: 13, cursor: "pointer" }}>
+        <button onClick={() => setShowChatMenu(true)}
+          style={{ background: SL, border: `1px solid ${BD}`, borderRadius: 10, padding: "6px 12px", color: "#555", fontSize: 13, cursor: "pointer" }}>
           ···
         </button>
       </div>
+
+      {/* 채팅 메뉴 시트 */}
+      {showChatMenu && (
+        <div onClick={() => setShowChatMenu(false)} style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end", justifyContent: "center"
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            width: "100%", maxWidth: 480, background: SF,
+            borderTopLeftRadius: 20, borderTopRightRadius: 20,
+            padding: "12px 16px 28px", animation: "matchPop 0.25s ease both"
+          }}>
+            <div style={{ width: 40, height: 4, background: BD, borderRadius: 2, margin: "0 auto 14px" }} />
+            <div style={{ fontSize: 12, color: "#888", textAlign: "center", marginBottom: 10 }}>{chatU.name}</div>
+            <button onClick={() => { setShowChatMenu(false); setRepT(chatU); setRepDone(false); setRepR(""); go(SC.REPORT); }}
+              style={{ width: "100%", padding: "16px 0", background: SL, border: `1px solid ${BD}`, borderRadius: 12, marginBottom: 8, fontSize: 15, color: "#444", cursor: "pointer" }}>
+              🚨 신고하기
+            </button>
+            <button onClick={() => { setShowChatMenu(false); if (window.confirm(`${chatU.name}님과의 매치를 해제할까요?`)) { handleUnlike(chatU); back(); } }}
+              style={{ width: "100%", padding: "16px 0", background: SL, border: `1px solid ${BD}`, borderRadius: 12, marginBottom: 8, fontSize: 15, color: "#444", cursor: "pointer" }}>
+              💔 매치 해제 (좋아요 취소)
+            </button>
+            <button onClick={() => { setShowChatMenu(false); if (window.confirm(`${chatU.name}님을 차단할까요?`)) { handleBlock(chatU.id); } }}
+              style={{ width: "100%", padding: "16px 0", background: SL, border: `1px solid ${BD}`, borderRadius: 12, marginBottom: 8, fontSize: 15, color: "#ef4444", cursor: "pointer" }}>
+              🚫 차단하기
+            </button>
+            <button onClick={() => setShowChatMenu(false)}
+              style={{ width: "100%", padding: "12px 0", background: "transparent", border: "none", fontSize: 14, color: "#888", cursor: "pointer", marginTop: 4 }}>
+              취소
+            </button>
+          </div>
+        </div>
+      )}
 
       <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{
