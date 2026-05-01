@@ -705,6 +705,16 @@ export default function App() {
   const [showChatMenu, setShowChatMenu] = useState(false);
   const myPRef = useRef([]);
   const intPRef = useRef([]);
+  // 프로필 캐시 — 5분 TTL. listener fire마다 같은 유저 재로드 방지 (RTDB 다운로드 비용 ↓)
+  const profileCacheRef = useRef({});
+  const fetchProfileCached = async (uid) => {
+    const cached = profileCacheRef.current[uid];
+    if (cached && Date.now() - cached.cachedAt < 5 * 60 * 1000) return cached.data;
+    const snap = await get(ref(db, `${DB_USERS}/${uid}`));
+    const data = snap.exists() ? snap.val() : null;
+    profileCacheRef.current[uid] = { data, cachedAt: Date.now() };
+    return data;
+  };
   const [notifOn, setNotifOn] = useState(true);
   const [photoURLs, setPhotoURLs] = useState({});
   const [uploading, setUploading] = useState({});
@@ -731,7 +741,8 @@ export default function App() {
         if (permission !== "granted") return;
         const token = await getToken(messaging, { vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY });
         if (token) {
-          await set(ref(db, `${DB_USERS}/${authUser.uid}/fcmToken`), token);
+          // fcmTokens/{uid} 별도 경로 — users/ 다운로드 비용 + 프라이버시(타 유저에게 토큰 노출) 차단
+          await set(ref(db, `fcmTokens/${authUser.uid}`), token);
         }
         onMessage(messaging, (payload) => {
           const { title, body } = payload.notification || {};
@@ -782,11 +793,12 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // DB에서 전체 유저 / 좋아요 / 매칭 불러오기
+  // DB에서 유저 / 좋아요 / 매칭 불러오기 — 한 번에 최대 100명만 (RTDB 다운로드 비용 보호)
+  // 10K 유저 × 매 로그인 × 20MB → 6TB/월 폭주 방지. limitToLast로 최근 100명만 받음.
   const loadUsersAndRelations = async (uid, myMp, myIp, blockedList) => {
     try {
       const [usersSnap, likesSnap, matchesSnap] = await Promise.all([
-        get(ref(db, DB_USERS)),
+        get(query(ref(db, DB_USERS), limitToLast(100))),
         get(ref(db, `${DB_LIKES}/${uid}`)),
         get(ref(db, `${DB_MATCHES}/${uid}`)),
       ]);
@@ -898,10 +910,8 @@ export default function App() {
       const otherUids = Object.keys(idx);
       const cards = await Promise.all(otherUids.map(async k => {
         try {
-          const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
-          if (!pSnap.exists()) return null;
-          const pData = pSnap.val();
-          if (!pData.nickname) return null;
+          const pData = await fetchProfileCached(k);
+          if (!pData || !pData.nickname) return null;
           const card = profileToCard(k, pData, myPRef.current, intPRef.current);
           if (card && idx[k]) {
             card.lm = idx[k].lastText || "";
@@ -927,10 +937,8 @@ export default function App() {
       const cards = await Promise.all(
         keys.map(async k => {
           try {
-            const pSnap = await get(ref(db, `${DB_USERS}/${k}`));
-            if (!pSnap.exists()) return null;
-            const pData = pSnap.val();
-            if (!pData.nickname) return null;
+            const pData = await fetchProfileCached(k);
+            if (!pData || !pData.nickname) return null;
             return profileToCard(k, pData, myPRef.current, intPRef.current);
           } catch { return null; }
         })

@@ -43,8 +43,13 @@ export default async function handler(req, res) {
 
   try {
     const db = getDatabase();
-    const snap = await db.ref(`users/${toUid}/fcmToken`).get();
-    const token = snap.val();
+    // 신규 경로 fcmTokens/{uid} 우선 조회, 없으면 구 경로 폴백 (마이그레이션 호환)
+    let snap = await db.ref(`fcmTokens/${toUid}`).get();
+    let token = snap.val();
+    if (!token) {
+      snap = await db.ref(`users/${toUid}/fcmToken`).get();
+      token = snap.val();
+    }
     if (!token) return res.status(200).json({ sent: false, reason: "no token" });
 
     await getMessaging().send({
