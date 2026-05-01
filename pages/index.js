@@ -10,7 +10,7 @@ import {
   signOut,
   onAuthStateChanged,
 } from "firebase/auth";
-import { ref, set, get, push, onValue } from "firebase/database";
+import { ref, set, get, push, onValue, remove } from "firebase/database";
 
 // ─── i18n ───
 const LANGS = [
@@ -987,9 +987,29 @@ export default function App() {
         if (u.uid) sendPush(u.uid, "새로운 매칭! ✨", `${nick || "누군가"}와 서로 좋아요!`);
       } else {
         st("💕 " + t("like") + "!");
+        // 일방 좋아요 — 상대방에게 알림 (이름 비공개로 호기심 유발)
+        if (u.uid) sendPush(u.uid, "💕 누군가 당신을 좋아해요!", "MyPiece에서 누군가 당신에게 ✨를 보냈어요");
       }
     } catch (e) {
       st("좋아요 실패: " + e.message);
+    }
+  };
+
+  // 좋아요 취소 + 매치 해제 (양방향)
+  const handleUnlike = async (u) => {
+    if (!u || !authUser) return;
+    setLiked(p => p.filter(id => id !== u.id));
+    setMatches(p => p.filter(x => x.id !== u.id));
+    matchesSeenRef.current.delete(u.id);
+    try {
+      await Promise.all([
+        remove(ref(db, `${DB_LIKES}/${authUser.uid}/${u.id}`)),
+        remove(ref(db, `${DB_MATCHES}/${authUser.uid}/${u.id}`)),
+        remove(ref(db, `${DB_MATCHES}/${u.id}/${authUser.uid}`)),
+      ]);
+      st("좋아요 취소했어요");
+    } catch (e) {
+      st("취소 실패: " + e.message);
     }
   };
 
@@ -2154,8 +2174,16 @@ export default function App() {
             </div>
           </div>
         </div>
-        <button onClick={() => { setRepT(chatU); setRepDone(false); setRepR(""); go(SC.REPORT); }}
-          style={{ background: SL, border: `1px solid ${BD}`, borderRadius: 10, padding: "6px 12px", color: "#555", fontSize: 13, cursor: "pointer" }}>
+        <button onClick={() => {
+          const choice = window.prompt("1: 신고  /  2: 매치 해제 (좋아요 취소)\n원하는 번호를 입력하세요");
+          if (choice === "1") { setRepT(chatU); setRepDone(false); setRepR(""); go(SC.REPORT); }
+          else if (choice === "2") {
+            if (window.confirm(`${chatU.name}님과의 매치를 해제하시겠어요? 좋아요와 매치 기록이 삭제됩니다.`)) {
+              handleUnlike(chatU);
+              back();
+            }
+          }
+        }} style={{ background: SL, border: `1px solid ${BD}`, borderRadius: 10, padding: "6px 12px", color: "#555", fontSize: 13, cursor: "pointer" }}>
           ···
         </button>
       </div>
@@ -2298,9 +2326,13 @@ export default function App() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button onClick={() => handleLike(u)}
-            style={{ flex: 1, padding: "14px 0", borderRadius: 14, background: AS+"15", border: `1px solid ${AS}33`, color: AS, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-            {liked.includes(u.id) ? "❤️" : "🤍"} {t("like")}
+          <button onClick={() => liked.includes(u.id) ? handleUnlike(u) : handleLike(u)}
+            style={{ flex: 1, padding: "14px 0", borderRadius: 14,
+              background: liked.includes(u.id) ? `${A}22` : AS+"15",
+              border: `1px solid ${liked.includes(u.id) ? A : AS+"33"}`,
+              color: liked.includes(u.id) ? A : AS,
+              fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+            {liked.includes(u.id) ? "❤️ 좋아요 취소" : "🤍 " + t("like")}
           </button>
           <button onClick={() => openChat(u)}
             style={{ flex: 1, padding: "14px 0", borderRadius: 14, background: `linear-gradient(135deg,${A},${AD})`, border: "none", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
