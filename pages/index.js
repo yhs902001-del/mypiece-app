@@ -703,6 +703,8 @@ export default function App() {
   const [receivedLikes, setReceivedLikes] = useState({}); // {likerUid: ts}
   const [lastVisit, setLastVisit] = useState({ home: 0, chat: 0 });
   const [showChatMenu, setShowChatMenu] = useState(false);
+  const [chatPhotoUploading, setChatPhotoUploading] = useState(false);
+  const chatFileRef = useRef(null);
   const myPRef = useRef([]);
   const intPRef = useRef([]);
   // 프로필 캐시 — 5분 TTL. listener fire마다 같은 유저 재로드 방지 (RTDB 다운로드 비용 ↓)
@@ -844,18 +846,32 @@ export default function App() {
     if (!chatU || !authUser) return;
     const otherUid = chatU.uid || String(chatU.id);
     const chatId = [authUser.uid, otherUid].sort().join("_");
-    // 페이지네이션 — 최근 100개 메시지만 (DB 다운로드 비용 절감)
+    // 페이지네이션 — 최근 100개 메시지만 (DB 다운로드 비용 절감) + 7일 만료 필터
+    const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - RETENTION_MS;
     const msgsRef = query(ref(db, `${DB_CHATS}/${chatId}`), limitToLast(100));
     const unsub = onValue(msgsRef, (snap) => {
       if (snap.exists()) {
         const data = snap.val();
-        const arr = Object.values(data).sort((a, b) => a.ts - b.ts);
-        setMsgs(arr.map(m => ({ id: m.ts, from: m.uid === authUser.uid ? "me" : "them", text: m.text, time: m.time })));
+        // 만료된 메시지 자동 삭제 (lazy cleanup — 채팅 열 때마다)
+        Object.entries(data).forEach(([key, m]) => {
+          if ((m.ts || 0) < cutoff) {
+            remove(ref(db, `${DB_CHATS}/${chatId}/${key}`)).catch(() => {});
+          }
+        });
+        const arr = Object.values(data)
+          .filter(m => (m.ts || 0) >= cutoff)
+          .sort((a, b) => a.ts - b.ts);
+        setMsgs(arr.map(m => ({
+          id: m.ts, from: m.uid === authUser.uid ? "me" : "them",
+          text: m.text || "", photo: m.photo || null, time: m.time
+        })));
         // 기존 채팅 마이그레이션: 메시지가 있으면 내 인덱스에 등록
         const last = arr[arr.length - 1];
         if (last) {
+          const preview = last.photo ? "📷 사진" : (last.text || "").slice(0, 80);
           set(ref(db, `${DB_USERCHATS}/${authUser.uid}/${otherUid}`), {
-            lastTs: last.ts, lastText: (last.text || "").slice(0, 80)
+            lastTs: last.ts, lastText: preview
           }).catch(() => {});
         }
       }
@@ -1234,6 +1250,53 @@ export default function App() {
       setMsgs(p => [...p, { id: Date.now(), from: "me", text, time: ts }]);
     }
     setInp("");
+  };
+
+  // 채팅 사진 업로드 — 사용자당 일 3장 제한 (Storage 비용 보호)
+  const CHAT_PHOTO_DAILY_LIMIT = 3;
+  const checkChatPhotoQuota = () => {
+    if (typeof window === "undefined") return false;
+    const today = new Date().toISOString().slice(0, 10);
+    let usage;
+    try { usage = JSON.parse(localStorage.getItem("mp_chat_photos") || "{}"); } catch { usage = {}; }
+    if (usage.date !== today) usage = { date: today, count: 0 };
+    if (usage.count >= CHAT_PHOTO_DAILY_LIMIT) return false;
+    usage.count++;
+    localStorage.setItem("mp_chat_photos", JSON.stringify(usage));
+    return true;
+  };
+
+  const sendPhotoMsg = async (file) => {
+    if (!file || !authUser || !chatU) return;
+    if (!file.type.startsWith("image/")) { st("이미지 파일만 가능"); return; }
+    if (file.size > 10 * 1024 * 1024) { st("이미지 너무 큽니다 (최대 10MB)"); return; }
+    if (!checkChatPhotoQuota()) {
+      st(`오늘 채팅 사진 한도 초과 (${CHAT_PHOTO_DAILY_LIMIT}장). 내일 다시 시도해주세요`);
+      return;
+    }
+    setChatPhotoUploading(true);
+    try {
+      const blob = await compressImage(file, 1024, 0.82);
+      const otherUid = chatU.uid || String(chatU.id);
+      const chatId = [authUser.uid, otherUid].sort().join("_");
+      const sRefPath = sRef(storage, `chats/${chatId}/${authUser.uid}_${Date.now()}.jpg`);
+      await uploadBytes(sRefPath, blob, { contentType: "image/jpeg" });
+      const url = await getDownloadURL(sRefPath);
+      const now = new Date();
+      const h = now.getHours();
+      const time = (h % 12 || 12) + ":" + String(now.getMinutes()).padStart(2, "0") + (h >= 12 ? " PM" : " AM");
+      const msgData = { text: "", photo: url, uid: authUser.uid, time, ts: Date.now() };
+      await push(ref(db, `${DB_CHATS}/${chatId}`), msgData);
+      const meta = { lastTs: msgData.ts, lastText: "📷 사진" };
+      Promise.all([
+        set(ref(db, `${DB_USERCHATS}/${authUser.uid}/${otherUid}`), meta),
+        set(ref(db, `${DB_USERCHATS}/${otherUid}/${authUser.uid}`), meta),
+      ]).catch(() => {});
+      if (chatU.uid) sendPush(chatU.uid, `💌 ${nick || "누군가"}`, "📷 사진");
+    } catch (e) {
+      st("사진 전송 실패: " + e.message);
+    }
+    setChatPhotoUploading(false);
   };
 
   const filteredUsers = users.filter(u => !blocked.includes(u.id)).filter(u => gFilter === "all" || !u.g || u.g === gFilter);
@@ -2008,7 +2071,11 @@ export default function App() {
                 <div style={{ textAlign: "center", padding: "4px 12px", borderRadius: 8, background: SF, color: "#444", fontSize: 10, alignSelf: "center", marginBottom: 4 }}>MyPiece Match · {chatU.pct}%</div>
                 {msgs.map(msg => (
                   <div key={msg.id} style={{ alignSelf: msg.from === "me" ? "flex-end" : "flex-start", maxWidth: "78%" }}>
-                    <div style={{ padding: "9px 14px", borderRadius: 18, background: msg.from === "me" ? `linear-gradient(135deg,${A},${AD})` : SL, color: msg.from === "me" ? "#fff" : "#1a1a1a", fontSize: 13, lineHeight: 1.5, borderBottomRightRadius: msg.from === "me" ? 4 : 18, borderBottomLeftRadius: msg.from === "me" ? 18 : 4 }}>{msg.text}</div>
+                    {msg.photo ? (
+                      <img src={msg.photo} alt="photo" style={{ maxWidth: 200, maxHeight: 240, borderRadius: 14, display: "block", border: msg.from === "me" ? `2px solid ${A}` : `1px solid ${BD}` }} />
+                    ) : (
+                      <div style={{ padding: "9px 14px", borderRadius: 18, background: msg.from === "me" ? `linear-gradient(135deg,${A},${AD})` : SL, color: msg.from === "me" ? "#fff" : "#1a1a1a", fontSize: 13, lineHeight: 1.5, borderBottomRightRadius: msg.from === "me" ? 4 : 18, borderBottomLeftRadius: msg.from === "me" ? 18 : 4 }}>{msg.text}</div>
+                    )}
                     <div style={{ fontSize: 9, color: "#333", marginTop: 1, textAlign: msg.from === "me" ? "right" : "left" }}>{msg.time}</div>
                   </div>
                 ))}
@@ -2022,6 +2089,13 @@ export default function App() {
                 <div ref={chatEnd} />
               </div>
               <div style={{ padding: "8px 12px", display: "flex", gap: 6, alignItems: "center", borderTop: `1px solid ${BD}`, background: SF }}>
+                <input type="file" accept="image/*" ref={chatFileRef} style={{ display: "none" }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) sendPhotoMsg(f); e.target.value = ""; }} />
+                <button onClick={() => chatFileRef.current?.click()} disabled={chatPhotoUploading}
+                  aria-label="사진 보내기"
+                  style={{ width: 34, height: 34, borderRadius: "50%", background: SL, border: `1px solid ${BD}`, color: "#666", fontSize: 14, cursor: chatPhotoUploading ? "wait" : "pointer", flexShrink: 0 }}>
+                  {chatPhotoUploading ? "⏳" : "📷"}
+                </button>
                 <input style={{ flex: 1, padding: "10px 16px", borderRadius: 20, background: SF, border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 13, outline: "none" }}
                   placeholder={t("msgPh")} maxLength={500} value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} />
                 <button onClick={sendMsg} style={{ width: 38, height: 38, borderRadius: "50%", background: inp.trim() ? `linear-gradient(135deg,${A},${AD})` : SL, border: "none", color: "#fff", fontSize: 17, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>🚀</button>
@@ -2349,13 +2423,17 @@ export default function App() {
         }}>MyPiece Match · {chatU.pct}%</div>
         {msgs.map(msg => (
           <div key={msg.id} style={{ alignSelf: msg.from === "me" ? "flex-end" : "flex-start", maxWidth: "78%" }}>
-            <div style={{
-              padding: "10px 16px", borderRadius: 20,
-              background: msg.from === "me" ? `linear-gradient(135deg,${A},${AD})` : SL,
-              color: msg.from === "me" ? "#fff" : "#1a1a1a", fontSize: 14, lineHeight: 1.5,
-              borderBottomRightRadius: msg.from === "me" ? 6 : 20,
-              borderBottomLeftRadius: msg.from === "me" ? 20 : 6
-            }}>{msg.text}</div>
+            {msg.photo ? (
+              <img src={msg.photo} alt="photo" style={{ maxWidth: 240, maxHeight: 300, borderRadius: 16, display: "block", border: msg.from === "me" ? `2px solid ${A}` : `1px solid ${BD}` }} />
+            ) : (
+              <div style={{
+                padding: "10px 16px", borderRadius: 20,
+                background: msg.from === "me" ? `linear-gradient(135deg,${A},${AD})` : SL,
+                color: msg.from === "me" ? "#fff" : "#1a1a1a", fontSize: 14, lineHeight: 1.5,
+                borderBottomRightRadius: msg.from === "me" ? 6 : 20,
+                borderBottomLeftRadius: msg.from === "me" ? 20 : 6
+              }}>{msg.text}</div>
+            )}
             <div style={{ fontSize: 10, color: "#333", marginTop: 2, textAlign: msg.from === "me" ? "right" : "left" }}>{msg.time}</div>
           </div>
         ))}
@@ -2373,6 +2451,16 @@ export default function App() {
       </div>
 
       <div style={{ padding: "10px 14px", display: "flex", gap: 8, alignItems: "center", borderTop: `1px solid ${BD}`, background: SF }}>
+        <input type="file" accept="image/*" ref={chatFileRef} style={{ display: "none" }}
+          onChange={e => { const f = e.target.files?.[0]; if (f) sendPhotoMsg(f); e.target.value = ""; }} />
+        <button onClick={() => chatFileRef.current?.click()} disabled={chatPhotoUploading}
+          aria-label="사진 보내기"
+          style={{
+            width: 40, height: 40, borderRadius: "50%",
+            background: SL, border: `1px solid ${BD}`, color: "#666",
+            fontSize: 18, cursor: chatPhotoUploading ? "wait" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+          }}>{chatPhotoUploading ? "⏳" : "📷"}</button>
         <input
           style={{ flex: 1, padding: "12px 18px", borderRadius: 24, background: SF, border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 14, outline: "none" }}
           placeholder={t("msgPh")}
