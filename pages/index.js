@@ -1173,7 +1173,8 @@ export default function App() {
     <div style={{
       position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
       width: "100%", maxWidth: 480, display: "flex",
-      background: "#0d0d0d", borderTop: `1px solid ${BD}`,
+      background: "rgba(255, 248, 243, 0.96)", backdropFilter: "blur(10px)",
+      borderTop: `1px solid ${BD}`,
       padding: "8px 0 10px", zIndex: 100
     }}>
       {[
@@ -1646,7 +1647,7 @@ export default function App() {
     const pool = filteredUsers.filter(u => !liked.includes(u.id) && (u.mp.some(x => intP.includes(x)) || u.ip.some(x => myP.includes(x))));
     const m = pool[swpI % Math.max(pool.length, 1)];
     return (
-      <div style={{ display: "flex", width: "100vw", height: "100vh", background: "#0d0d0d", color: "#1a1a1a", fontFamily: "'Noto Sans KR', system-ui, sans-serif", overflow: "hidden" }}>
+      <div style={{ display: "flex", width: "100vw", height: "100vh", background: "linear-gradient(180deg, #fff8f3 0%, #ffffff 520px)", color: "#1a1a1a", fontFamily: "'Noto Sans KR', system-ui, sans-serif", overflow: "hidden" }}>
         <Toast />
         <MatchModal />
 
@@ -2128,7 +2129,7 @@ export default function App() {
 
   // ═══ 채팅 ═══
   if (scr === SC.CHAT && chatU) return (
-    <div style={{ ...base, display: "flex", flexDirection: "column", height: "100vh" }}>
+    <div style={{ ...base, display: "flex", flexDirection: "column", height: "calc(100vh - 62px)" }}>
       <Head><title>MyPiece - Chat</title></Head>
       <Toast />
       <div style={{
@@ -2204,6 +2205,7 @@ export default function App() {
           cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
         }}>🚀</button>
       </div>
+      <Nav />
     </div>
   );
 
@@ -2256,7 +2258,7 @@ export default function App() {
   if (scr === SC.UPROF && photoT) {
     const u = photoT;
     return (
-      <div style={{ ...base, padding: "56px 28px" }}>
+      <div style={{ ...base, padding: "56px 28px 80px" }}>
         <button onClick={back} style={{ background: "none", border: "none", color: "#666", fontSize: 14, cursor: "pointer", marginBottom: 20 }}>
           ‹ Back
         </button>
@@ -2315,13 +2317,14 @@ export default function App() {
             {t("block")}
           </button>
         </div>
+        <Nav />
       </div>
     );
   }
 
   // ═══ 신고 ═══
   if (scr === SC.REPORT) return (
-    <div style={{ ...base, padding: "56px 28px" }}>
+    <div style={{ ...base, padding: "56px 28px 80px" }}>
       <button onClick={back} style={{ background: "none", border: "none", color: "#666", fontSize: 14, cursor: "pointer", marginBottom: 20 }}>‹ Back</button>
       {repDone ? (
         <div style={{ textAlign: "center", paddingTop: 40 }}>
@@ -2342,6 +2345,7 @@ export default function App() {
           <button style={btnStyle(!!repR)} onClick={() => repR && handleReport()}>{t("report")}</button>
         </div>
       )}
+      <Nav />
     </div>
   );
 
@@ -2400,6 +2404,7 @@ export default function App() {
           <span style={{ fontSize: 14, color: "#ef4444" }}>회원 탈퇴</span>
         </div>
       </div>
+      <Nav />
     </div>
   );
 
