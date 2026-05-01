@@ -642,6 +642,7 @@ const SC = { SPLASH: 0, LANG: 1, AGE: 2, BLOCK: 3, LOGIN: 4, SIGNUP: 5, HOME: 6,
 const DB_USERS = "users";
 const DB_CHATS = "chats";
 const DB_USERCHATS = "userChats";
+const DB_RECEIVED_LIKES = "receivedLikes";
 const DB_LIKES = "likes";
 const DB_MATCHES = "matches";
 
@@ -699,6 +700,8 @@ export default function App() {
   const [editGender, setEditGender] = useState("");
   const [editBio, setEditBio] = useState("");
   const [chatPartners, setChatPartners] = useState([]);
+  const [receivedLikes, setReceivedLikes] = useState({}); // {likerUid: ts}
+  const [lastVisit, setLastVisit] = useState({ home: 0, chat: 0 });
   const myPRef = useRef([]);
   const intPRef = useRef([]);
   const [notifOn, setNotifOn] = useState(true);
@@ -731,7 +734,7 @@ export default function App() {
         }
         onMessage(messaging, (payload) => {
           const { title, body } = payload.notification || {};
-          st(`🔔 ${title}: ${body}`);
+          st(body ? `${title} · ${body}` : title);
         });
       } catch (e) {
         console.warn("FCM 초기화 실패:", e.message);
@@ -849,6 +852,38 @@ export default function App() {
   // myP/intP를 ref에 동기화 (effect 의존성에서 빼기 위해)
   useEffect(() => { myPRef.current = myP; }, [myP]);
   useEffect(() => { intPRef.current = intP; }, [intP]);
+
+  // 마지막 방문 시각 localStorage에서 로드
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setLastVisit({
+      home: parseInt(localStorage.getItem("mp_lastVisitHome") || "0"),
+      chat: parseInt(localStorage.getItem("mp_lastVisitChat") || "0"),
+    });
+  }, []);
+
+  // 화면 진입 시 lastVisit 갱신 (배지 카운트 리셋용)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const now = Date.now();
+    if (scr === SC.HOME) {
+      localStorage.setItem("mp_lastVisitHome", String(now));
+      setLastVisit(p => ({ ...p, home: now }));
+    } else if (scr === SC.CHATLIST) {
+      localStorage.setItem("mp_lastVisitChat", String(now));
+      setLastVisit(p => ({ ...p, chat: now }));
+    }
+  }, [scr]);
+
+  // 받은 좋아요 실시간 동기화
+  useEffect(() => {
+    if (!authUser) return;
+    const rRef = ref(db, `${DB_RECEIVED_LIKES}/${authUser.uid}`);
+    const unsub = onValue(rRef, (snap) => {
+      setReceivedLikes(snap.exists() ? snap.val() : {});
+    }, () => setReceivedLikes({}));
+    return () => unsub();
+  }, [authUser]);
 
   // 채팅 상대 실시간 동기화 — userChats/{내UID} 인덱스 구독
   // (sendMsg에서 양쪽 인덱스를 갱신함)
@@ -973,6 +1008,8 @@ export default function App() {
     if (!authUser) { st("💕 " + t("like") + "!"); return; }
     try {
       await set(ref(db, `${DB_LIKES}/${authUser.uid}/${u.id}`), true);
+      // 상대 받은좋아요함에 등록 (배지/카운트용)
+      set(ref(db, `${DB_RECEIVED_LIKES}/${u.id}/${authUser.uid}`), Date.now()).catch(() => {});
       const reverse = await get(ref(db, `${DB_LIKES}/${u.id}/${authUser.uid}`));
       if (reverse.exists() && reverse.val()) {
         const ts = Date.now();
@@ -984,11 +1021,11 @@ export default function App() {
         setMatches(p => p.some(x => x.id === u.id) ? p : [...p, u]);
         setMatchUser(u);
         setShowMatch(true);
-        if (u.uid) sendPush(u.uid, "새로운 매칭! ✨", `${nick || "누군가"}와 서로 좋아요!`);
+        if (u.uid) sendPush(u.uid, "✨ 매칭!", `${nick || "누군가"}와 서로 좋아요`);
       } else {
         st("💕 " + t("like") + "!");
         // 일방 좋아요 — 상대방에게 알림 (이름 비공개로 호기심 유발)
-        if (u.uid) sendPush(u.uid, "💕 누군가 당신을 좋아해요!", "MyPiece에서 누군가 당신에게 ✨를 보냈어요");
+        if (u.uid) sendPush(u.uid, "💕 새 좋아요", "누군가 당신을 좋아해요");
       }
     } catch (e) {
       st("좋아요 실패: " + e.message);
@@ -1006,6 +1043,7 @@ export default function App() {
         remove(ref(db, `${DB_LIKES}/${authUser.uid}/${u.id}`)),
         remove(ref(db, `${DB_MATCHES}/${authUser.uid}/${u.id}`)),
         remove(ref(db, `${DB_MATCHES}/${u.id}/${authUser.uid}`)),
+        remove(ref(db, `${DB_RECEIVED_LIKES}/${u.id}/${authUser.uid}`)),
       ]);
       st("좋아요 취소했어요");
     } catch (e) {
@@ -1131,7 +1169,7 @@ export default function App() {
           set(ref(db, `${DB_USERCHATS}/${otherUid}/${authUser.uid}`), meta),
         ]);
       } catch { /* 인덱스 실패해도 메시지는 전송됨 */ }
-      if (chatU.uid) sendPush(chatU.uid, `${nick || "누군가"}가 메시지를 보냈어요`, inp.slice(0, 50));
+      if (chatU.uid) sendPush(chatU.uid, `💌 ${nick || "누군가"}`, inp.slice(0, 40));
     } else {
       setMsgs(p => [...p, { id: Date.now(), from: "me", text: inp, time: ts }]);
     }
@@ -1175,9 +1213,10 @@ export default function App() {
   const Toast = () => toast ? (
     <div style={{
       position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)",
-      zIndex: 10000, padding: "12px 24px", borderRadius: 14,
+      zIndex: 10000, padding: "12px 18px", borderRadius: 14,
       background: `${A}ee`, color: "#fff", fontSize: 13, fontWeight: 600,
-      maxWidth: 340, textAlign: "center", whiteSpace: "nowrap"
+      maxWidth: "calc(100vw - 32px)", width: "auto", textAlign: "center",
+      lineHeight: 1.4, wordBreak: "keep-all", boxShadow: "0 6px 20px rgba(0,0,0,0.18)"
     }}>{toast}</div>
   ) : null;
 
@@ -1189,31 +1228,52 @@ export default function App() {
     }}>⭐ {t("badge")}</span>
   ) : null;
 
-  const Nav = () => (
-    <div style={{
-      position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
-      width: "100%", maxWidth: 480, display: "flex",
-      background: "rgba(255, 248, 243, 0.96)", backdropFilter: "blur(10px)",
-      borderTop: `1px solid ${BD}`,
-      padding: "8px 0 10px", zIndex: 100
-    }}>
-      {[
-        { i: "✨", l: t("home"), s: SC.HOME },
-        { i: "🌟", l: t("lounge"), s: SC.LOUNGE },
-        { i: "💌", l: t("chat"), s: SC.CHATLIST },
-        { i: "🌸", l: t("my"), s: SC.PROFILE },
-      ].map((tab, i) => (
-        <button key={i} onClick={() => go(tab.s)} style={{
-          flex: 1, background: "none", border: "none", cursor: "pointer",
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-          color: (tab.s === scr || (tab.s === SC.CHATLIST && scr === SC.CHAT)) ? A : "#666", fontSize: 18
-        }}>
-          <span>{tab.i}</span>
-          <span style={{ fontSize: 9, fontWeight: 600 }}>{tab.l}</span>
-        </button>
-      ))}
-    </div>
-  );
+  const Nav = () => {
+    // 새 좋아요 + 새 매치 카운트 (홈 마지막 방문 이후)
+    const newLikes = Object.values(receivedLikes).filter(ts => ts > lastVisit.home).length;
+    const newMatches = matches.filter(m => (receivedLikes[m.id] || 0) > lastVisit.home).length;
+    const homeBadge = newLikes; // 받은 좋아요 = 매치 후보
+    const chatBadge = chatPartners.filter(p => (p.lastTs || 0) > lastVisit.chat).length;
+    const tabs = [
+      { i: "✨", l: t("home"), s: SC.HOME, badge: homeBadge },
+      { i: "🌟", l: t("lounge"), s: SC.LOUNGE, badge: 0 },
+      { i: "💌", l: t("chat"), s: SC.CHATLIST, badge: chatBadge },
+      { i: "🌸", l: t("my"), s: SC.PROFILE, badge: 0 },
+    ];
+    return (
+      <div style={{
+        position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
+        width: "100%", maxWidth: 480, display: "flex",
+        background: "rgba(255, 248, 243, 0.96)", backdropFilter: "blur(10px)",
+        borderTop: `1px solid ${BD}`,
+        padding: "8px 0 10px", zIndex: 100
+      }}>
+        {tabs.map((tab, i) => (
+          <button key={i} onClick={() => go(tab.s)} style={{
+            flex: 1, background: "none", border: "none", cursor: "pointer",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+            color: (tab.s === scr || (tab.s === SC.CHATLIST && scr === SC.CHAT)) ? A : "#666", fontSize: 18,
+            position: "relative"
+          }}>
+            <span style={{ position: "relative" }}>
+              {tab.i}
+              {tab.badge > 0 && (
+                <span style={{
+                  position: "absolute", top: -4, right: -10,
+                  minWidth: 16, height: 16, padding: "0 4px",
+                  borderRadius: 8, background: "#ef4444", color: "#fff",
+                  fontSize: 9, fontWeight: 800,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  border: "1.5px solid #fff8f3", lineHeight: 1
+                }}>{tab.badge > 99 ? "99+" : tab.badge}</span>
+              )}
+            </span>
+            <span style={{ fontSize: 9, fontWeight: 600 }}>{tab.l}</span>
+          </button>
+        ))}
+      </div>
+    );
+  };
 
   const MatchModal = () => (showMatch && matchUser) ? (
     <div style={{ position: "fixed", inset: 0, zIndex: 99999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.88)", padding: "0 24px" }}>
@@ -2149,7 +2209,7 @@ export default function App() {
 
   // ═══ 채팅 ═══
   if (scr === SC.CHAT && chatU) return (
-    <div style={{ ...base, display: "flex", flexDirection: "column", height: "calc(100vh - 62px)" }}>
+    <div style={{ ...base, display: "flex", flexDirection: "column", height: "calc(100vh - 62px)", minHeight: 0 }}>
       <Head><title>MyPiece - Chat</title></Head>
       <Toast />
       <div style={{
