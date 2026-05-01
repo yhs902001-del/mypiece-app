@@ -5,12 +5,39 @@
 const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
 const BAD_LEVELS = new Set(["LIKELY", "VERY_LIKELY"]);
 
+// IP별 분당 호출 한도 (서버 메모리 기반 — Vercel 콜드스타트 시 리셋되므로 진짜 보호는 클라이언트+Firebase Rules에서)
+const IP_LIMIT_PER_MIN = 5;
+const ipLog = new Map();
+function rateLimited(ip) {
+  const now = Date.now();
+  const log = (ipLog.get(ip) || []).filter(t => now - t < 60_000);
+  if (log.length >= IP_LIMIT_PER_MIN) return true;
+  log.push(now);
+  ipLog.set(ip, log);
+  // 메모리 누수 방지 — 100개 IP 이상이면 가장 오래된 것 제거
+  if (ipLog.size > 100) {
+    const oldest = [...ipLog.entries()].sort((a,b) => (a[1][0]||0) - (b[1][0]||0))[0];
+    if (oldest) ipLog.delete(oldest[0]);
+  }
+  return false;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const ip = (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "unknown").split(",")[0].trim();
+  if (rateLimited(ip)) {
+    return res.status(429).json({ ok: false, reason: "너무 잦은 요청 (분당 5회 제한)" });
+  }
 
   const { imageUrl } = req.body || {};
   if (!imageUrl || typeof imageUrl !== "string") {
     return res.status(400).json({ ok: false, reason: "imageUrl required" });
+  }
+  // 임의 URL 검열 차단 — Firebase Storage URL만 허용 (악용 방지: Vision API가 임의 URL 다운로드)
+  if (!imageUrl.startsWith("https://firebasestorage.googleapis.com/") &&
+      !imageUrl.startsWith("https://storage.googleapis.com/")) {
+    return res.status(400).json({ ok: false, reason: "허용되지 않은 이미지 호스트" });
   }
 
   const apiKey = process.env.VISION_API_KEY;

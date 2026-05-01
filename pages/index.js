@@ -10,7 +10,7 @@ import {
   signOut,
   onAuthStateChanged,
 } from "firebase/auth";
-import { ref, set, get, push, onValue, remove } from "firebase/database";
+import { ref, set, get, push, onValue, remove, query, limitToLast } from "firebase/database";
 
 // ─── i18n ───
 const LANGS = [
@@ -832,7 +832,8 @@ export default function App() {
     if (!chatU || !authUser) return;
     const otherUid = chatU.uid || String(chatU.id);
     const chatId = [authUser.uid, otherUid].sort().join("_");
-    const msgsRef = ref(db, `${DB_CHATS}/${chatId}`);
+    // 페이지네이션 — 최근 100개 메시지만 (DB 다운로드 비용 절감)
+    const msgsRef = query(ref(db, `${DB_CHATS}/${chatId}`), limitToLast(100));
     const unsub = onValue(msgsRef, (snap) => {
       if (snap.exists()) {
         const data = snap.val();
@@ -951,12 +952,43 @@ export default function App() {
   const tog = (list, set, max, p) => set(prev => prev.includes(p) ? prev.filter(x => x !== p) : prev.length < max ? [...prev, p] : prev);
   const st = (m) => setToast(m);
 
+  // 이미지 압축 (Storage 비용 절감) — 1024px 이내, JPEG 82%
+  const compressImage = (file, maxSize = 1024, quality = 0.82) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let { width, height } = img;
+      if (width > maxSize || height > maxSize) {
+        const ratio = Math.min(maxSize / width, maxSize / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error("compress failed")), "image/jpeg", quality);
+    };
+    img.onerror = () => reject(new Error("invalid image"));
+    img.src = URL.createObjectURL(file);
+  });
+
   const handlePhotoUpload = async (partIdx, file) => {
     if (!file || !authUser) return;
+    // 사이즈 제한 — 원본 10MB 초과 거부 (악의적/실수 방지)
+    if (file.size > 10 * 1024 * 1024) {
+      st("이미지가 너무 큽니다 (최대 10MB)");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      st("이미지 파일만 업로드 가능합니다");
+      return;
+    }
     setUploading(u => ({ ...u, [partIdx]: true }));
     try {
-      const storageRef = sRef(storage, `verifications/${authUser.uid}/${partIdx}_${Date.now()}`);
-      await uploadBytes(storageRef, file);
+      // 압축: 평균 5MB → 200~400KB로 감소 (Storage 90%+ 절감)
+      const blob = await compressImage(file, 1024, 0.82);
+      const storageRef = sRef(storage, `verifications/${authUser.uid}/${partIdx}_${Date.now()}.jpg`);
+      await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
       const url = await getDownloadURL(storageRef);
       setPhotoURLs(p => ({ ...p, [partIdx]: url }));
       startScan(partIdx, url);
@@ -966,8 +998,26 @@ export default function App() {
     setUploading(u => ({ ...u, [partIdx]: false }));
   };
 
-  // 이미지 검열 — /api/moderate-image 호출. VISION_API_KEY 세팅 시 실 Vision 검열, 미설정 시 mock 폴백.
+  // 이미지 검열 — /api/moderate-image. 일일 호출 한도 적용 (Vision API 비용 보호)
+  const VISION_DAILY_LIMIT = 10; // 사용자당 하루 최대 10번
+  const checkVisionQuota = () => {
+    if (typeof window === "undefined") return true;
+    const today = new Date().toISOString().slice(0, 10);
+    let usage;
+    try { usage = JSON.parse(localStorage.getItem("mp_vision_usage") || "{}"); } catch { usage = {}; }
+    if (usage.date !== today) usage = { date: today, count: 0 };
+    if (usage.count >= VISION_DAILY_LIMIT) return false;
+    usage.count++;
+    localStorage.setItem("mp_vision_usage", JSON.stringify(usage));
+    return true;
+  };
+
   const startScan = async (partIdx, imageUrl) => {
+    if (!checkVisionQuota()) {
+      st(`오늘 검증 한도(${VISION_DAILY_LIMIT}회) 초과. 내일 다시 시도해주세요`);
+      setScans(s => ({ ...s, [partIdx]: "fail" }));
+      return;
+    }
     setScans(s => ({ ...s, [partIdx]: "scanning" }));
     try {
       const resp = await fetch("/api/moderate-image", {
@@ -1152,27 +1202,28 @@ export default function App() {
 
   // Firebase 채팅 메시지 전송
   const sendMsg = async () => {
-    if (!inp.trim()) return;
+    const text = inp.trim().slice(0, 500); // 메시지 500자 제한 (DB 비용 + 악용 방지)
+    if (!text) return;
     const now = new Date();
     const h = now.getHours();
     const ts = (h % 12 || 12) + ":" + String(now.getMinutes()).padStart(2, "0") + (h >= 12 ? " PM" : " AM");
-    const msgData = { text: inp, uid: authUser?.uid || "guest", time: ts, ts: Date.now() };
+    const msgData = { text, uid: authUser?.uid || "guest", time: ts, ts: Date.now() };
 
     if (authUser && chatU) {
       const otherUid = chatU.uid || String(chatU.id);
       const chatId = [authUser.uid, otherUid].sort().join("_");
       await push(ref(db, `${DB_CHATS}/${chatId}`), msgData);
       // 양쪽 채팅 인덱스 갱신 (탭에 채팅 목록 표시용)
-      const meta = { lastTs: msgData.ts, lastText: inp.slice(0, 80) };
+      const meta = { lastTs: msgData.ts, lastText: text.slice(0, 80) };
       try {
         await Promise.all([
           set(ref(db, `${DB_USERCHATS}/${authUser.uid}/${otherUid}`), meta),
           set(ref(db, `${DB_USERCHATS}/${otherUid}/${authUser.uid}`), meta),
         ]);
       } catch { /* 인덱스 실패해도 메시지는 전송됨 */ }
-      if (chatU.uid) sendPush(chatU.uid, `💌 ${nick || "누군가"}`, inp.slice(0, 40));
+      if (chatU.uid) sendPush(chatU.uid, `💌 ${nick || "누군가"}`, text.slice(0, 40));
     } else {
-      setMsgs(p => [...p, { id: Date.now(), from: "me", text: inp, time: ts }]);
+      setMsgs(p => [...p, { id: Date.now(), from: "me", text, time: ts }]);
     }
     setInp("");
   };
@@ -1964,7 +2015,7 @@ export default function App() {
               </div>
               <div style={{ padding: "8px 12px", display: "flex", gap: 6, alignItems: "center", borderTop: `1px solid ${BD}`, background: SF }}>
                 <input style={{ flex: 1, padding: "10px 16px", borderRadius: 20, background: SF, border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 13, outline: "none" }}
-                  placeholder={t("msgPh")} value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} />
+                  placeholder={t("msgPh")} maxLength={500} value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} />
                 <button onClick={sendMsg} style={{ width: 38, height: 38, borderRadius: "50%", background: inp.trim() ? `linear-gradient(135deg,${A},${AD})` : SL, border: "none", color: "#fff", fontSize: 17, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>🚀</button>
               </div>
             </div>
@@ -2317,6 +2368,7 @@ export default function App() {
         <input
           style={{ flex: 1, padding: "12px 18px", borderRadius: 24, background: SF, border: `1px solid ${BD}`, color: "#1a1a1a", fontSize: 14, outline: "none" }}
           placeholder={t("msgPh")}
+          maxLength={500}
           value={inp}
           onChange={e => setInp(e.target.value)}
           onKeyDown={e => e.key === "Enter" && sendMsg()}
