@@ -1282,6 +1282,15 @@ export default function App() {
         @keyframes heartFloat{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-60px);opacity:0}}
         @keyframes matchGlow{0%,100%{box-shadow:0 0 0px ${A}00}50%{box-shadow:0 0 40px ${A}88}}
       `}</style>
+      {/* 닫기 X 버튼 */}
+      <button onClick={() => setShowMatch(false)} aria-label="닫기" style={{
+        position: "fixed", top: 20, right: 20, zIndex: 100000,
+        width: 40, height: 40, borderRadius: "50%",
+        background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.25)",
+        color: "#fff", fontSize: 22, fontWeight: 300, cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        lineHeight: 1, padding: 0
+      }}>×</button>
       <div style={{ animation: "matchPop 0.55s cubic-bezier(0.34,1.56,0.64,1) both", textAlign: "center", width: "100%", maxWidth: 360 }}>
         {/* 하트 */}
         <div style={{ fontSize: 52, marginBottom: 8 }}>💕</div>
