@@ -2,8 +2,25 @@
 // VISION_API_KEY 환경변수가 세팅돼 있으면 실호출, 없으면 mock 폴백(85% OK).
 // 배포 시 GCP Console에서 Cloud Vision API 활성화 + API Key 발급 후 env에 넣으면 즉시 전환됨.
 
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getDatabase } from "firebase-admin/database";
+
+if (!getApps().length) {
+  try {
+    initializeApp({
+      credential: cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+      }),
+      databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+    });
+  } catch { /* admin 미설정 시 uid 검증만 스킵 */ }
+}
+
 const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
 const BAD_LEVELS = new Set(["LIKELY", "VERY_LIKELY"]);
+const VISION_DAILY_LIMIT_SERVER = 12; // 클라(10)보다 약간 여유 (네트워크 재시도 흡수)
 
 // IP별 분당 호출 한도 (서버 메모리 기반 — Vercel 콜드스타트 시 리셋되므로 진짜 보호는 클라이언트+Firebase Rules에서)
 const IP_LIMIT_PER_MIN = 5;
@@ -30,7 +47,7 @@ export default async function handler(req, res) {
     return res.status(429).json({ ok: false, reason: "너무 잦은 요청 (분당 5회 제한)" });
   }
 
-  const { imageUrl } = req.body || {};
+  const { imageUrl, uid } = req.body || {};
   if (!imageUrl || typeof imageUrl !== "string") {
     return res.status(400).json({ ok: false, reason: "imageUrl required" });
   }
@@ -38,6 +55,19 @@ export default async function handler(req, res) {
   if (!imageUrl.startsWith("https://firebasestorage.googleapis.com/") &&
       !imageUrl.startsWith("https://storage.googleapis.com/")) {
     return res.status(400).json({ ok: false, reason: "허용되지 않은 이미지 호스트" });
+  }
+
+  // uid 기반 일일 한도 검증 (localStorage 우회 방지)
+  if (uid && getApps().length) {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const adb = getDatabase();
+      const snap = await adb.ref(`apiUsage/${uid}/vision/${today}`).get();
+      const count = snap.val() || 0;
+      if (count > VISION_DAILY_LIMIT_SERVER) {
+        return res.status(429).json({ ok: false, reason: "일일 검증 한도 초과 (서버측)" });
+      }
+    } catch { /* 검증 실패 시에도 진행 — 클라측 한도가 1차 방어선 */ }
   }
 
   const apiKey = process.env.VISION_API_KEY;

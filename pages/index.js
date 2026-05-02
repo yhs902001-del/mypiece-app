@@ -9,6 +9,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  deleteUser,
 } from "firebase/auth";
 import { ref, set, get, push, onValue, remove, query, limitToLast } from "firebase/database";
 
@@ -861,6 +862,7 @@ export default function App() {
         });
         const arr = Object.values(data)
           .filter(m => (m.ts || 0) >= cutoff)
+          .filter(m => !blockedRef.current.includes(m.uid)) // 차단 사용자 메시지 숨김
           .sort((a, b) => a.ts - b.ts);
         setMsgs(arr.map(m => ({
           id: m.ts, from: m.uid === authUser.uid ? "me" : "them",
@@ -879,9 +881,11 @@ export default function App() {
     return () => unsub();
   }, [chatU, authUser]);
 
-  // myP/intP를 ref에 동기화 (effect 의존성에서 빼기 위해)
+  // myP/intP/blocked를 ref에 동기화 (effect 의존성에서 빼기 위해)
   useEffect(() => { myPRef.current = myP; }, [myP]);
   useEffect(() => { intPRef.current = intP; }, [intP]);
+  const blockedRef = useRef([]);
+  useEffect(() => { blockedRef.current = blocked; }, [blocked]);
 
   // 마지막 방문 시각 localStorage에서 로드
   useEffect(() => {
@@ -1023,21 +1027,24 @@ export default function App() {
   };
 
   // 이미지 검열 — /api/moderate-image. 일일 호출 한도 적용 (Vision API 비용 보호)
-  const VISION_DAILY_LIMIT = 10; // 사용자당 하루 최대 10번
-  const checkVisionQuota = () => {
-    if (typeof window === "undefined") return true;
+  // 카운트는 Firebase apiUsage/{uid}/vision/{date}에 저장 (localStorage 우회 방지)
+  const VISION_DAILY_LIMIT = 10;
+  const checkVisionQuota = async () => {
+    if (!authUser) return false;
     const today = new Date().toISOString().slice(0, 10);
-    let usage;
-    try { usage = JSON.parse(localStorage.getItem("mp_vision_usage") || "{}"); } catch { usage = {}; }
-    if (usage.date !== today) usage = { date: today, count: 0 };
-    if (usage.count >= VISION_DAILY_LIMIT) return false;
-    usage.count++;
-    localStorage.setItem("mp_vision_usage", JSON.stringify(usage));
-    return true;
+    const usageRef = ref(db, `apiUsage/${authUser.uid}/vision/${today}`);
+    try {
+      const snap = await get(usageRef);
+      const count = snap.exists() ? snap.val() : 0;
+      if (count >= VISION_DAILY_LIMIT) return false;
+      await set(usageRef, count + 1);
+      return true;
+    } catch { return false; }
   };
 
   const startScan = async (partIdx, imageUrl) => {
-    if (!checkVisionQuota()) {
+    const allowed = await checkVisionQuota();
+    if (!allowed) {
       st(`오늘 검증 한도(${VISION_DAILY_LIMIT}회) 초과. 내일 다시 시도해주세요`);
       setScans(s => ({ ...s, [partIdx]: "fail" }));
       return;
@@ -1047,7 +1054,7 @@ export default function App() {
       const resp = await fetch("/api/moderate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl }),
+        body: JSON.stringify({ imageUrl, uid: authUser?.uid }),
       });
       const data = await resp.json();
       setScans(s => {
@@ -1083,9 +1090,11 @@ export default function App() {
     if (!authUser) { st("💕 " + t("like") + "!"); return; }
     try {
       await set(ref(db, `${DB_LIKES}/${authUser.uid}/${u.id}`), true);
-      // 상대 받은좋아요함에 등록 (배지/카운트용)
-      set(ref(db, `${DB_RECEIVED_LIKES}/${u.id}/${authUser.uid}`), Date.now()).catch(() => {});
-      const reverse = await get(ref(db, `${DB_LIKES}/${u.id}/${authUser.uid}`));
+      // 상대 받은좋아요함에 등록 (배지/카운트용 + 매치 reverse 검사용)
+      await set(ref(db, `${DB_RECEIVED_LIKES}/${u.id}/${authUser.uid}`), Date.now()).catch(() => {});
+      // reverse 검사 — 보안 Rules로 다른 사람 likes 못 읽으므로 receivedLikes(본인 거)로 확인
+      // 상대가 먼저 나를 좋아요 했다면 receivedLikes/{내UID}/{상대UID}에 ts가 있음
+      const reverse = await get(ref(db, `${DB_RECEIVED_LIKES}/${authUser.uid}/${u.id}`));
       if (reverse.exists() && reverse.val()) {
         const ts = Date.now();
         matchesSeenRef.current.add(u.id);
@@ -1216,6 +1225,64 @@ export default function App() {
     setNick(""); setMyP([]); setIntP([]);
     setSignupAge(""); setSignupGender(""); setSignupBio("");
     setScr(SC.LANG);
+  };
+
+  // 회원 탈퇴 — 모든 DB 데이터 삭제 + Auth 계정 삭제
+  const handleDeleteAccount = async () => {
+    if (!authUser) return;
+    if (!window.confirm("정말 탈퇴하시겠어요?\n모든 매치, 채팅, 좋아요가 영구 삭제됩니다.")) return;
+    if (!window.confirm("마지막 확인:\n이 계정과 모든 데이터를 완전히 지웁니다.\n되돌릴 수 없습니다.")) return;
+    const uid = authUser.uid;
+    try {
+      // 1) 채팅 파트너 UID 추출 (양쪽 chatId 만들어서 삭제하기 위해)
+      const ucSnap = await get(ref(db, `${DB_USERCHATS}/${uid}`));
+      const partners = ucSnap.exists() ? Object.keys(ucSnap.val()) : [];
+
+      // 2) 모든 데이터 병렬 삭제
+      await Promise.all([
+        remove(ref(db, `${DB_USERS}/${uid}`)),
+        remove(ref(db, `fcmTokens/${uid}`)),
+        remove(ref(db, `${DB_LIKES}/${uid}`)),
+        remove(ref(db, `${DB_MATCHES}/${uid}`)),
+        remove(ref(db, `${DB_RECEIVED_LIKES}/${uid}`)),
+        remove(ref(db, `${DB_USERCHATS}/${uid}`)),
+        remove(ref(db, `apiUsage/${uid}`)),
+        // 상대방 측 내 흔적도 제거
+        ...partners.flatMap(otherUid => {
+          const chatId = [uid, otherUid].sort().join("_");
+          return [
+            remove(ref(db, `${DB_CHATS}/${chatId}`)),
+            remove(ref(db, `${DB_USERCHATS}/${otherUid}/${uid}`)),
+            remove(ref(db, `${DB_MATCHES}/${otherUid}/${uid}`)),
+            remove(ref(db, `${DB_LIKES}/${otherUid}/${uid}`)),
+            remove(ref(db, `${DB_RECEIVED_LIKES}/${otherUid}/${uid}`)),
+          ];
+        }),
+      ]);
+
+      // 3) Auth 계정 삭제 — 마지막에. recent sign-in 필요할 수 있음
+      await deleteUser(authUser);
+
+      // 4) 클라이언트 state/storage 정리
+      setUser(null); setAuthUser(null);
+      setNick(""); setMyP([]); setIntP([]); setBlocked([]);
+      setMatches([]); setLiked([]); setChatPartners([]);
+      setSignupAge(""); setSignupGender(""); setSignupBio("");
+      if (typeof window !== "undefined") {
+        ["mp_lastVisitHome","mp_lastVisitChat","mp_vision_usage","mp_chat_photos"]
+          .forEach(k => localStorage.removeItem(k));
+      }
+      setScr(SC.LANG);
+      st("계정이 완전히 삭제됐어요");
+    } catch (e) {
+      if (e.code === "auth/requires-recent-login") {
+        st("보안을 위해 로그아웃 후 다시 로그인한 뒤 시도해주세요");
+        await signOut(auth);
+        setScr(SC.LOGIN);
+      } else {
+        st("탈퇴 실패: " + e.message);
+      }
+    }
   };
 
   const openChat = (u) => {
@@ -2674,9 +2741,9 @@ export default function App() {
           <span style={{ fontSize: 13, color: "#555" }}>이메일</span>
           <div style={{ fontSize: 14, color: "#555", marginTop: 2 }}>{authUser?.email || "-"}</div>
         </div>
-        <div onClick={() => { if (confirm("정말 탈퇴하시겠어요?")) handleLogout(); }}
+        <div onClick={handleDeleteAccount}
           style={{ padding: "14px 20px", cursor: "pointer" }}>
-          <span style={{ fontSize: 14, color: "#ef4444" }}>회원 탈퇴</span>
+          <span style={{ fontSize: 14, color: "#ef4444" }}>회원 탈퇴 (모든 데이터 삭제)</span>
         </div>
       </div>
       <Nav />
